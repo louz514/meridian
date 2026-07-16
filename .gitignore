@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.vercel/
+
+# Secrets / local env — never commit real keys. Templates (.env.example) are kept.
+.env
+.env.*
+!.env.example
+
+# Runtime state — belongs on the host volume, not in version control. Also keeps
+# operator/user wallet activity and the paid-tool ledger out of the repo.
+*.jsonl
+position-state.json
+
+# OS / editor cruft
+.DS_Store
+*.log
+*.tsbuildinfo
+*.code-workspace
+
+# Operator-only local scripts (leak local paths / not product code)
+scripts-pushState.sh
+_volprobe.mjs

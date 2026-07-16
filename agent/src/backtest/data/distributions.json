@@ -1,0 +1,993 @@
+{
+ "source": "theindex.finance /indexer (GraphQL distributions query) + /live (spot prices at fetch time)",
+ "fetchedAt": "2026-07-11T00:00:00Z",
+ "note": "Real historical $INDEX distribution events. totalUsd values each event's 18-stock payout at prices observed at fetch time (not each event's own historical price) -- a reasonable approximation over this short window. Not a long-run backtest: this is the full history retrievable at fetch time (~54h, product is young).",
+ "ethUsdAtFetch": 1797.74,
+ "indexPriceUsdAtFetch": 0.003617,
+ "eligibilityThresholdTokens": 10000,
+ "eligibleSupplyTokensAtFetch": 941346393.62,
+ "totalSupplyTokens": 1000000000,
+ "entryFeePct": 3,
+ "events": [
+  {
+   "timestamp": 1783557839,
+   "totalUsd": 90.104047,
+   "holders": 678
+  },
+  {
+   "timestamp": 1783558762,
+   "totalUsd": 182.173478,
+   "holders": 678
+  },
+  {
+   "timestamp": 1783559686,
+   "totalUsd": 143.188327,
+   "holders": 680
+  },
+  {
+   "timestamp": 1783560610,
+   "totalUsd": 84.42808,
+   "holders": 684
+  },
+  {
+   "timestamp": 1783561536,
+   "totalUsd": 209.843269,
+   "holders": 683
+  },
+  {
+   "timestamp": 1783562466,
+   "totalUsd": 373.585294,
+   "holders": 681
+  },
+  {
+   "timestamp": 1783563396,
+   "totalUsd": 488.7088,
+   "holders": 682
+  },
+  {
+   "timestamp": 1783564318,
+   "totalUsd": 86.332895,
+   "holders": 682
+  },
+  {
+   "timestamp": 1783565253,
+   "totalUsd": 671.40203,
+   "holders": 679
+  },
+  {
+   "timestamp": 1783566175,
+   "totalUsd": 78.848259,
+   "holders": 678
+  },
+  {
+   "timestamp": 1783567099,
+   "totalUsd": 71.746125,
+   "holders": 677
+  },
+  {
+   "timestamp": 1783568021,
+   "totalUsd": 49.482401,
+   "holders": 676
+  },
+  {
+   "timestamp": 1783568948,
+   "totalUsd": 81.881948,
+   "holders": 679
+  },
+  {
+   "timestamp": 1783569876,
+   "totalUsd": 238.494585,
+   "holders": 679
+  },
+  {
+   "timestamp": 1783570797,
+   "totalUsd": 50.087434,
+   "holders": 678
+  },
+  {
+   "timestamp": 1783571723,
+   "totalUsd": 260.784718,
+   "holders": 678
+  },
+  {
+   "timestamp": 1783572644,
+   "totalUsd": 37.282199,
+   "holders": 680
+  },
+  {
+   "timestamp": 1783573568,
+   "totalUsd": 125.019831,
+   "holders": 683
+  },
+  {
+   "timestamp": 1783574497,
+   "totalUsd": 452.878514,
+   "holders": 682
+  },
+  {
+   "timestamp": 1783575419,
+   "totalUsd": 55.350235,
+   "holders": 680
+  },
+  {
+   "timestamp": 1783576348,
+   "totalUsd": 248.588662,
+   "holders": 677
+  },
+  {
+   "timestamp": 1783577272,
+   "totalUsd": 53.641591,
+   "holders": 674
+  },
+  {
+   "timestamp": 1783578194,
+   "totalUsd": 73.707205,
+   "holders": 675
+  },
+  {
+   "timestamp": 1783579116,
+   "totalUsd": 108.520884,
+   "holders": 677
+  },
+  {
+   "timestamp": 1783580040,
+   "totalUsd": 228.123723,
+   "holders": 682
+  },
+  {
+   "timestamp": 1783580966,
+   "totalUsd": 344.693913,
+   "holders": 680
+  },
+  {
+   "timestamp": 1783581896,
+   "totalUsd": 761.338654,
+   "holders": 680
+  },
+  {
+   "timestamp": 1783582825,
+   "totalUsd": 113.972934,
+   "holders": 690
+  },
+  {
+   "timestamp": 1783583749,
+   "totalUsd": 97.194968,
+   "holders": 693
+  },
+  {
+   "timestamp": 1783584690,
+   "totalUsd": 1622.146106,
+   "holders": 709
+  },
+  {
+   "timestamp": 1783585617,
+   "totalUsd": 79.069623,
+   "holders": 713
+  },
+  {
+   "timestamp": 1783586545,
+   "totalUsd": 123.347284,
+   "holders": 712
+  },
+  {
+   "timestamp": 1783587476,
+   "totalUsd": 307.965763,
+   "holders": 721
+  },
+  {
+   "timestamp": 1783588407,
+   "totalUsd": 305.102229,
+   "holders": 724
+  },
+  {
+   "timestamp": 1783589331,
+   "totalUsd": 35.760383,
+   "holders": 728
+  },
+  {
+   "timestamp": 1783590257,
+   "totalUsd": 254.295712,
+   "holders": 731
+  },
+  {
+   "timestamp": 1783591191,
+   "totalUsd": 618.692515,
+   "holders": 727
+  },
+  {
+   "timestamp": 1783592120,
+   "totalUsd": 247.096996,
+   "holders": 726
+  },
+  {
+   "timestamp": 1783593057,
+   "totalUsd": 1396.914098,
+   "holders": 730
+  },
+  {
+   "timestamp": 1783593984,
+   "totalUsd": 187.637746,
+   "holders": 729
+  },
+  {
+   "timestamp": 1783594909,
+   "totalUsd": 219.14624,
+   "holders": 728
+  },
+  {
+   "timestamp": 1783595833,
+   "totalUsd": 217.986925,
+   "holders": 727
+  },
+  {
+   "timestamp": 1783596771,
+   "totalUsd": 1038.006927,
+   "holders": 732
+  },
+  {
+   "timestamp": 1783597698,
+   "totalUsd": 172.532597,
+   "holders": 735
+  },
+  {
+   "timestamp": 1783598624,
+   "totalUsd": 245.523256,
+   "holders": 735
+  },
+  {
+   "timestamp": 1783599554,
+   "totalUsd": 265.466752,
+   "holders": 734
+  },
+  {
+   "timestamp": 1783600485,
+   "totalUsd": 446.460118,
+   "holders": 738
+  },
+  {
+   "timestamp": 1783601419,
+   "totalUsd": 848.382688,
+   "holders": 745
+  },
+  {
+   "timestamp": 1783602345,
+   "totalUsd": 191.112051,
+   "holders": 743
+  },
+  {
+   "timestamp": 1783603272,
+   "totalUsd": 1374.485102,
+   "holders": 734
+  },
+  {
+   "timestamp": 1783604208,
+   "totalUsd": 406.738663,
+   "holders": 730
+  },
+  {
+   "timestamp": 1783605141,
+   "totalUsd": 438.875998,
+   "holders": 733
+  },
+  {
+   "timestamp": 1783606052,
+   "totalUsd": 525.664594,
+   "holders": 731
+  },
+  {
+   "timestamp": 1783606985,
+   "totalUsd": 295.917956,
+   "holders": 732
+  },
+  {
+   "timestamp": 1783607918,
+   "totalUsd": 358.086702,
+   "holders": 734
+  },
+  {
+   "timestamp": 1783608854,
+   "totalUsd": 569.937018,
+   "holders": 734
+  },
+  {
+   "timestamp": 1783609805,
+   "totalUsd": 1791.67057,
+   "holders": 725
+  },
+  {
+   "timestamp": 1783610744,
+   "totalUsd": 538.259462,
+   "holders": 722
+  },
+  {
+   "timestamp": 1783611676,
+   "totalUsd": 196.209099,
+   "holders": 733
+  },
+  {
+   "timestamp": 1783612622,
+   "totalUsd": 1273.292143,
+   "holders": 737
+  },
+  {
+   "timestamp": 1783613554,
+   "totalUsd": 289.659538,
+   "holders": 732
+  },
+  {
+   "timestamp": 1783614488,
+   "totalUsd": 462.17511,
+   "holders": 731
+  },
+  {
+   "timestamp": 1783615422,
+   "totalUsd": 686.691779,
+   "holders": 737
+  },
+  {
+   "timestamp": 1783616357,
+   "totalUsd": 337.636898,
+   "holders": 742
+  },
+  {
+   "timestamp": 1783617295,
+   "totalUsd": 374.526239,
+   "holders": 743
+  },
+  {
+   "timestamp": 1783618219,
+   "totalUsd": 95.564662,
+   "holders": 746
+  },
+  {
+   "timestamp": 1783619145,
+   "totalUsd": 129.345675,
+   "holders": 750
+  },
+  {
+   "timestamp": 1783620074,
+   "totalUsd": 440.174543,
+   "holders": 744
+  },
+  {
+   "timestamp": 1783620996,
+   "totalUsd": 22.487585,
+   "holders": 745
+  },
+  {
+   "timestamp": 1783621920,
+   "totalUsd": 132.680699,
+   "holders": 743
+  },
+  {
+   "timestamp": 1783622844,
+   "totalUsd": 57.972879,
+   "holders": 745
+  },
+  {
+   "timestamp": 1783623776,
+   "totalUsd": 372.76291,
+   "holders": 742
+  },
+  {
+   "timestamp": 1783624706,
+   "totalUsd": 438.371269,
+   "holders": 739
+  },
+  {
+   "timestamp": 1783625632,
+   "totalUsd": 97.452127,
+   "holders": 735
+  },
+  {
+   "timestamp": 1783626556,
+   "totalUsd": 63.060097,
+   "holders": 734
+  },
+  {
+   "timestamp": 1783627498,
+   "totalUsd": 1130.912723,
+   "holders": 743
+  },
+  {
+   "timestamp": 1783628436,
+   "totalUsd": 1086.821135,
+   "holders": 752
+  },
+  {
+   "timestamp": 1783629341,
+   "totalUsd": 1365.808607,
+   "holders": 761
+  },
+  {
+   "timestamp": 1783630256,
+   "totalUsd": 706.36032,
+   "holders": 766
+  },
+  {
+   "timestamp": 1783630528,
+   "totalUsd": 255.870358,
+   "holders": 769
+  },
+  {
+   "timestamp": 1783631433,
+   "totalUsd": 2871.627724,
+   "holders": 778
+  },
+  {
+   "timestamp": 1783632378,
+   "totalUsd": 2250.050026,
+   "holders": 784
+  },
+  {
+   "timestamp": 1783633318,
+   "totalUsd": 488.088459,
+   "holders": 791
+  },
+  {
+   "timestamp": 1783634235,
+   "totalUsd": 521.709432,
+   "holders": 789
+  },
+  {
+   "timestamp": 1783635146,
+   "totalUsd": 296.932399,
+   "holders": 793
+  },
+  {
+   "timestamp": 1783636069,
+   "totalUsd": 539.946491,
+   "holders": 790
+  },
+  {
+   "timestamp": 1783636977,
+   "totalUsd": 275.684058,
+   "holders": 794
+  },
+  {
+   "timestamp": 1783637883,
+   "totalUsd": 304.700265,
+   "holders": 795
+  },
+  {
+   "timestamp": 1783638789,
+   "totalUsd": 294.605995,
+   "holders": 799
+  },
+  {
+   "timestamp": 1783639700,
+   "totalUsd": 324.342602,
+   "holders": 799
+  },
+  {
+   "timestamp": 1783640603,
+   "totalUsd": 288.176995,
+   "holders": 798
+  },
+  {
+   "timestamp": 1783641506,
+   "totalUsd": 215.431995,
+   "holders": 798
+  },
+  {
+   "timestamp": 1783642522,
+   "totalUsd": 834.074838,
+   "holders": 805
+  },
+  {
+   "timestamp": 1783643386,
+   "totalUsd": 720.474938,
+   "holders": 805
+  },
+  {
+   "timestamp": 1783644346,
+   "totalUsd": 190.291015,
+   "holders": 803
+  },
+  {
+   "timestamp": 1783645254,
+   "totalUsd": 776.783557,
+   "holders": 801
+  },
+  {
+   "timestamp": 1783646209,
+   "totalUsd": 216.522896,
+   "holders": 804
+  },
+  {
+   "timestamp": 1783647170,
+   "totalUsd": 261.067826,
+   "holders": 809
+  },
+  {
+   "timestamp": 1783648084,
+   "totalUsd": 317.033544,
+   "holders": 807
+  },
+  {
+   "timestamp": 1783649042,
+   "totalUsd": 180.463137,
+   "holders": 804
+  },
+  {
+   "timestamp": 1783649990,
+   "totalUsd": 48.735953,
+   "holders": 801
+  },
+  {
+   "timestamp": 1783650903,
+   "totalUsd": 319.090664,
+   "holders": 800
+  },
+  {
+   "timestamp": 1783651852,
+   "totalUsd": 89.410292,
+   "holders": 802
+  },
+  {
+   "timestamp": 1783652760,
+   "totalUsd": 208.694295,
+   "holders": 804
+  },
+  {
+   "timestamp": 1783653720,
+   "totalUsd": 119.182852,
+   "holders": 802
+  },
+  {
+   "timestamp": 1783654664,
+   "totalUsd": 49.252687,
+   "holders": 806
+  },
+  {
+   "timestamp": 1783655617,
+   "totalUsd": 141.380881,
+   "holders": 809
+  },
+  {
+   "timestamp": 1783656580,
+   "totalUsd": 116.459848,
+   "holders": 810
+  },
+  {
+   "timestamp": 1783657541,
+   "totalUsd": 204.875267,
+   "holders": 808
+  },
+  {
+   "timestamp": 1783658495,
+   "totalUsd": 111.667072,
+   "holders": 809
+  },
+  {
+   "timestamp": 1783659450,
+   "totalUsd": 98.913583,
+   "holders": 815
+  },
+  {
+   "timestamp": 1783660400,
+   "totalUsd": 59.488548,
+   "holders": 815
+  },
+  {
+   "timestamp": 1783661359,
+   "totalUsd": 232.377651,
+   "holders": 817
+  },
+  {
+   "timestamp": 1783662311,
+   "totalUsd": 58.771309,
+   "holders": 814
+  },
+  {
+   "timestamp": 1783663273,
+   "totalUsd": 191.059304,
+   "holders": 812
+  },
+  {
+   "timestamp": 1783664231,
+   "totalUsd": 115.824855,
+   "holders": 809
+  },
+  {
+   "timestamp": 1783665163,
+   "totalUsd": 0.0,
+   "holders": 809
+  },
+  {
+   "timestamp": 1783666113,
+   "totalUsd": 58.384895,
+   "holders": 810
+  },
+  {
+   "timestamp": 1783667058,
+   "totalUsd": 31.281733,
+   "holders": 807
+  },
+  {
+   "timestamp": 1783668003,
+   "totalUsd": 38.201358,
+   "holders": 803
+  },
+  {
+   "timestamp": 1783668920,
+   "totalUsd": 493.699326,
+   "holders": 801
+  },
+  {
+   "timestamp": 1783669880,
+   "totalUsd": 162.492732,
+   "holders": 804
+  },
+  {
+   "timestamp": 1783670833,
+   "totalUsd": 129.391157,
+   "holders": 803
+  },
+  {
+   "timestamp": 1783671735,
+   "totalUsd": 91.957979,
+   "holders": 801
+  },
+  {
+   "timestamp": 1783672668,
+   "totalUsd": 0.0,
+   "holders": 801
+  },
+  {
+   "timestamp": 1783673620,
+   "totalUsd": 88.541131,
+   "holders": 800
+  },
+  {
+   "timestamp": 1783674577,
+   "totalUsd": 124.581975,
+   "holders": 800
+  },
+  {
+   "timestamp": 1783675624,
+   "totalUsd": 132.883423,
+   "holders": 799
+  },
+  {
+   "timestamp": 1783676732,
+   "totalUsd": 91.92956,
+   "holders": 799
+  },
+  {
+   "timestamp": 1783677664,
+   "totalUsd": 0.0,
+   "holders": 797
+  },
+  {
+   "timestamp": 1783678415,
+   "totalUsd": 19.747073,
+   "holders": 799
+  },
+  {
+   "timestamp": 1783679366,
+   "totalUsd": 52.712743,
+   "holders": 799
+  },
+  {
+   "timestamp": 1783680286,
+   "totalUsd": 400.490504,
+   "holders": 802
+  },
+  {
+   "timestamp": 1783681248,
+   "totalUsd": 181.465705,
+   "holders": 806
+  },
+  {
+   "timestamp": 1783682210,
+   "totalUsd": 156.864295,
+   "holders": 804
+  },
+  {
+   "timestamp": 1783683159,
+   "totalUsd": 85.039412,
+   "holders": 803
+  },
+  {
+   "timestamp": 1783684117,
+   "totalUsd": 274.599626,
+   "holders": 800
+  },
+  {
+   "timestamp": 1783685065,
+   "totalUsd": 101.595397,
+   "holders": 797
+  },
+  {
+   "timestamp": 1783685969,
+   "totalUsd": 208.069767,
+   "holders": 798
+  },
+  {
+   "timestamp": 1783686928,
+   "totalUsd": 105.917645,
+   "holders": 798
+  },
+  {
+   "timestamp": 1783687870,
+   "totalUsd": 51.569757,
+   "holders": 796
+  },
+  {
+   "timestamp": 1783688817,
+   "totalUsd": 55.45754,
+   "holders": 797
+  },
+  {
+   "timestamp": 1783689733,
+   "totalUsd": 714.335253,
+   "holders": 798
+  },
+  {
+   "timestamp": 1783690701,
+   "totalUsd": 312.013299,
+   "holders": 806
+  },
+  {
+   "timestamp": 1783691613,
+   "totalUsd": 483.664962,
+   "holders": 809
+  },
+  {
+   "timestamp": 1783692568,
+   "totalUsd": 122.143159,
+   "holders": 806
+  },
+  {
+   "timestamp": 1783693512,
+   "totalUsd": 56.795309,
+   "holders": 805
+  },
+  {
+   "timestamp": 1783694477,
+   "totalUsd": 272.608794,
+   "holders": 803
+  },
+  {
+   "timestamp": 1783695451,
+   "totalUsd": 506.392076,
+   "holders": 805
+  },
+  {
+   "timestamp": 1783696398,
+   "totalUsd": 585.961042,
+   "holders": 802
+  },
+  {
+   "timestamp": 1783697347,
+   "totalUsd": 141.00527,
+   "holders": 801
+  },
+  {
+   "timestamp": 1783698297,
+   "totalUsd": 506.95966,
+   "holders": 796
+  },
+  {
+   "timestamp": 1783699263,
+   "totalUsd": 200.667877,
+   "holders": 800
+  },
+  {
+   "timestamp": 1783700168,
+   "totalUsd": 280.652076,
+   "holders": 795
+  },
+  {
+   "timestamp": 1783701183,
+   "totalUsd": 69.153283,
+   "holders": 795
+  },
+  {
+   "timestamp": 1783702100,
+   "totalUsd": 536.560699,
+   "holders": 795
+  },
+  {
+   "timestamp": 1783703061,
+   "totalUsd": 102.804751,
+   "holders": 796
+  },
+  {
+   "timestamp": 1783703969,
+   "totalUsd": 198.67198,
+   "holders": 795
+  },
+  {
+   "timestamp": 1783704874,
+   "totalUsd": 227.18032,
+   "holders": 802
+  },
+  {
+   "timestamp": 1783705778,
+   "totalUsd": 172.569132,
+   "holders": 803
+  },
+  {
+   "timestamp": 1783717281,
+   "totalUsd": 3154.807871,
+   "holders": 806
+  },
+  {
+   "timestamp": 1783719745,
+   "totalUsd": 0.0,
+   "holders": 805
+  },
+  {
+   "timestamp": 1783722454,
+   "totalUsd": 2077.759442,
+   "holders": 805
+  },
+  {
+   "timestamp": 1783722547,
+   "totalUsd": 555.073813,
+   "holders": 801
+  },
+  {
+   "timestamp": 1783723466,
+   "totalUsd": 726.444652,
+   "holders": 802
+  },
+  {
+   "timestamp": 1783724372,
+   "totalUsd": 250.63814,
+   "holders": 801
+  },
+  {
+   "timestamp": 1783725335,
+   "totalUsd": 159.288517,
+   "holders": 801
+  },
+  {
+   "timestamp": 1783726290,
+   "totalUsd": 108.435347,
+   "holders": 798
+  },
+  {
+   "timestamp": 1783727253,
+   "totalUsd": 149.661402,
+   "holders": 800
+  },
+  {
+   "timestamp": 1783728205,
+   "totalUsd": 152.954359,
+   "holders": 800
+  },
+  {
+   "timestamp": 1783729157,
+   "totalUsd": 73.227807,
+   "holders": 800
+  },
+  {
+   "timestamp": 1783730100,
+   "totalUsd": 16.617505,
+   "holders": 801
+  },
+  {
+   "timestamp": 1783731043,
+   "totalUsd": 252.492511,
+   "holders": 806
+  },
+  {
+   "timestamp": 1783732106,
+   "totalUsd": 3374.2462,
+   "holders": 843
+  },
+  {
+   "timestamp": 1783733172,
+   "totalUsd": 5543.152997,
+   "holders": 868
+  },
+  {
+   "timestamp": 1783733996,
+   "totalUsd": 1693.949031,
+   "holders": 864
+  },
+  {
+   "timestamp": 1783734942,
+   "totalUsd": 1896.22264,
+   "holders": 863
+  },
+  {
+   "timestamp": 1783735860,
+   "totalUsd": 492.435803,
+   "holders": 865
+  },
+  {
+   "timestamp": 1783736790,
+   "totalUsd": 432.22603,
+   "holders": 863
+  },
+  {
+   "timestamp": 1783737704,
+   "totalUsd": 724.992119,
+   "holders": 861
+  },
+  {
+   "timestamp": 1783738640,
+   "totalUsd": 272.059431,
+   "holders": 858
+  },
+  {
+   "timestamp": 1783739553,
+   "totalUsd": 270.506271,
+   "holders": 858
+  },
+  {
+   "timestamp": 1783740506,
+   "totalUsd": 93.287382,
+   "holders": 858
+  },
+  {
+   "timestamp": 1783741419,
+   "totalUsd": 1249.529991,
+   "holders": 859
+  },
+  {
+   "timestamp": 1783742344,
+   "totalUsd": 825.681041,
+   "holders": 861
+  },
+  {
+   "timestamp": 1783743367,
+   "totalUsd": 1743.050663,
+   "holders": 869
+  },
+  {
+   "timestamp": 1783744234,
+   "totalUsd": 787.150915,
+   "holders": 867
+  },
+  {
+   "timestamp": 1783745163,
+   "totalUsd": 507.85559,
+   "holders": 866
+  },
+  {
+   "timestamp": 1783746076,
+   "totalUsd": 695.238617,
+   "holders": 870
+  },
+  {
+   "timestamp": 1783746980,
+   "totalUsd": 257.375609,
+   "holders": 868
+  },
+  {
+   "timestamp": 1783747941,
+   "totalUsd": 121.740637,
+   "holders": 865
+  },
+  {
+   "timestamp": 1783748900,
+   "totalUsd": 83.783109,
+   "holders": 869
+  },
+  {
+   "timestamp": 1783749857,
+   "totalUsd": 81.73825,
+   "holders": 866
+  },
+  {
+   "timestamp": 1783750827,
+   "totalUsd": 81.2236,
+   "holders": 869
+  },
+  {
+   "timestamp": 1783751745,
+   "totalUsd": 570.455995,
+   "holders": 865
+  },
+  {
+   "timestamp": 1783752642,
+   "totalUsd": 96.865865,
+   "holders": 867
+  }
+ ]
+}
