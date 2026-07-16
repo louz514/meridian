@@ -1,4 +1,6 @@
-# Meridian
+<p align="center">
+  <img src="assets/banner.png" alt="Meridian" width="100%" />
+</p>
 
 **Autonomous AI market-making for tokenized equities on Robinhood Chain.**
 
