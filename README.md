@@ -108,14 +108,16 @@ management, scheduling). Meridian supplies the domain and does not run its own
 agent loop. A "Meridian agent" is an OpenHermit agent with the Meridian tools
 enabled.
 
+This repository is the Meridian backend.
+
 ```
-meridian/
-  agent/       Backend: MCP tool server, the market-making engine, on-chain
-               execution (Uniswap v4 on Robinhood Chain), the x402 payment
-               rail, per-wallet agent provisioning, and the RWA research swarm.
-  frontend/    Live desk and interface (Vite + React): watch Merid work,
-               sign in, and chat with your own agent.
+agent/    MCP tool server, the market-making engine, on-chain execution
+          (Uniswap v4 on Robinhood Chain), the x402 payment rail, per-wallet
+          agent provisioning, and the RWA research swarm.
 ```
+
+The live desk and interface (Vite + React) is a separate app, deployed at
+[meridian402.xyz](https://meridian402.xyz).
 
 Key pieces in `agent/src`:
 
@@ -145,21 +147,11 @@ Honest about where this is.
 
 ## Quickstart
 
-**Backend**
-
 ```bash
 cd agent
 npm install
 cp .env.example .env    # fill in the values you need
 npm run dev             # MCP server on http://127.0.0.1:8787
-```
-
-**Frontend**
-
-```bash
-cd frontend
-npm install
-npm run dev             # http://localhost:5173
 ```
 
 See [agent/README.md](agent/README.md) for the tool catalog and

@@ -25,3 +25,6 @@ position-state.json
 # Operator-only local scripts (leak local paths / not product code)
 scripts-pushState.sh
 _volprobe.mjs
+
+# Frontend lives in its own private repo (meridian-frontend)
+frontend/
