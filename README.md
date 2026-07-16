@@ -1,77 +1,105 @@
 # Meridian
 
-Cross-chain RWA (real-world asset) DEX with agentic trading — built as a layer
-on top of [OpenHermit](https://github.com/HCF-STUDIOS/openhermit).
+**Autonomous AI market-making for tokenized equities on Robinhood Chain.**
 
-OpenHermit is the operable agent runtime (durable state, sandboxed execution,
-fleet management, channels, scheduling). Meridian supplies the domain: an
-autonomous agent discovers RWA liquidity, routes orders, and settles trades
-using x402 micropayments. Meridian does **not** run its own agent loop — a
-"Meridian agent" is an OpenHermit agent with the Meridian MCP server (and,
-later, the Meridian trading skill) enabled.
+Meridian is a platform for the agentic economy. An autonomous agent named Merid
+makes markets in tokenized stocks (AAPL, NVDA, TSLA, GOOGL, META and more) on
+Robinhood Chain, entirely on-chain and fully transparent. Sign in with a wallet
+and you get your own Merid to talk to. Agents pay per call, from their own
+wallets, for the same market data and execution tools Merid runs on, metered
+over [x402](https://www.x402.org).
 
-**Current scope, by design: Robinhood Chain only.** The agent trades The Index's
-tokenized equities (AAPL, NVDA, TSLA, MSFT, COIN) there via Uniswap v4. The
-cross-chain pieces (`WormholeBridge`, the other `ChainId` values, the Solana/EVM
-multi-chain wallet stack) are real, tested code, just dormant — not deleted,
-not the current focus. Widening scope back out is a data change
-(`agent/src/marketData.ts`, `frontend/src/data/assets.ts`), not a rebuild.
+**Live:** [meridian402.xyz](https://meridian402.xyz) · Watch the agent work in
+real time and read its full, on-chain [track record](https://meridian402.xyz/track-record).
 
-## Structure
+## What it does
+
+- **Makes markets autonomously.** Merid provides concentrated liquidity in
+  tokenized-equity pools on Robinhood Chain's Uniswap v4, discovers which pools
+  are worth being in, re-centers and rebalances as price moves, and enforces its
+  own risk caps in code. Every position and every swap is on-chain and public.
+- **Gives every user their own agent.** Connect a wallet (sign a message, no
+  account, no keys) and Meridian provisions a personal Merid instance you can
+  chat with immediately. Today it advises: it reasons over the live market and
+  tells you what it would do. It never touches your funds.
+- **Sells its edge to other agents.** The signals and execution paths Merid
+  trades on are exposed as tools any agent can call and pay for per use over
+  x402: market data, LP scoring, carry quotes, the RWA universe map, and atomic
+  execution. No subscriptions, no API keys.
+- **Shows its work.** A live desk streams Merid's reasoning as it happens, and a
+  track record marks the book to market with real transaction hashes, including
+  the losses.
+
+## Architecture
+
+A monorepo, built as a layer on [OpenHermit](https://github.com/HCF-STUDIOS/openhermit).
+OpenHermit is the agent runtime (durable state, sandboxed execution, fleet
+management, scheduling). Meridian supplies the domain. A "Meridian agent" is an
+OpenHermit agent with the Meridian tools enabled; Meridian does not run its own
+agent loop.
 
 ```
 meridian/
-  agent/       Meridian MCP server — RWA/bridge/x402 tools an OpenHermit agent connects to
-  frontend/    Trading interface (Vite + React)
+  agent/       Backend: MCP tool server, the market-making engine, on-chain
+               execution (Uniswap v4 on Robinhood Chain), the x402 payment
+               rail, per-wallet agent provisioning, and the RWA research swarm.
+  frontend/    Live desk and interface (Vite + React): watch Merid work,
+               sign in, and chat with your own agent.
 ```
 
-## How it layers on OpenHermit
+Key pieces in `agent/src`:
 
-| Meridian piece | OpenHermit surface |
-|----------------|--------------------|
-| `agent/` MCP server (`meridian_*` tools) | Registered via `POST /api/admin/mcp-servers`; tools surface as `mcp__meridian__*` |
-| Trading strategy/procedure | _(next)_ a `SKILL.md` enabled per-agent or fleet-wide |
-| `frontend/` | _(next)_ driven by `@openhermit/sdk` — swaps become agent messages, activity streams back |
+- `venues/` and `lp*.ts` — pool discovery, LP scoring, and the market-making
+  engine (phase machine, cost-aware rebalancing, realized-net accounting).
+- `deploy/myAgent.ts` — provisions and drives each user's personal Merid.
+- `payments/` — the x402 rail: an on-chain USDG facilitator with a replay
+  ledger, and the paying side that settles tool calls hands-free.
+- `research/` — a fleet that maps the on-chain RWA universe and feeds the
+  agent's grounding.
+- `risk.ts` — spend and size caps enforced server-side, so a prompt cannot
+  exceed them.
 
-## Quick start
+## Status
 
-### Meridian MCP server
+Honest about where this is.
+
+- **Live and real.** On-chain swaps and LP positions on Robinhood Chain's
+  Uniswap v4, the x402 revenue rail, per-wallet advisor agents, and the research
+  swarm are all running against mainnet. The track record is real capital marked
+  to market, not a backtest.
+- **Small.** The house book runs at low size and is roughly break-even at
+  current scale. Market-making margins are thin until volume and depth grow.
+- **Coming next.** Letting an agent trade *your* funds requires delegated,
+  scoped signing (session keys). Until that ships, your agent is an advisor and
+  never has custody of your wallet.
+
+## Quickstart
+
+**Backend**
 
 ```bash
 cd agent
 npm install
-npm run dev        # http://127.0.0.1:8787/mcp
+cp .env.example .env    # fill in the values you need
+npm run dev             # MCP server on http://127.0.0.1:8787
 ```
 
-Then register and enable it with your OpenHermit gateway — see
-[agent/README.md](agent/README.md).
-
-### Frontend
+**Frontend**
 
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev             # http://localhost:5173
 ```
 
-Opens at http://localhost:5173. The circular dial in the swap panel is the
-source/destination chain selector: click a chain to set source, shift-click
-to set destination.
+See [agent/README.md](agent/README.md) for the tool catalog and
+[agent/DEPLOY.md](agent/DEPLOY.md) for deployment.
 
-## Where things stand
+## Stack
 
-Working scaffold, not production:
-- `agent/src/bridge/WormholeBridge.ts` — cross-chain routing stub, wire in the real Wormhole SDK
-- `agent/src/payments/X402Client.ts` — settlement stub matching the x402 flow
-- `agent/src/marketData.ts` — mock RWA price feed, replace with a real oracle/venue API
-- `agent/src/strategy/MomentumStrategy.ts` — example strategy behind the `Strategy` interface
-- `agent/src/risk.ts` — server-side spend caps enforced on the write tools
-- `agent/src/payments/PaymentGate.ts` — x402 paywall on the signal tools (`meridian_market_data`, `meridian_suggest_route`, `meridian_market_universe`); stub-accepts any payment until `X402_FACILITATOR_URL` is set, same pattern as the paying-side stub
-- `meridian_bridge_execute` — every cross-chain RWA move settles a routing fee via x402 (`X402Client.pay()`, paying side) from the trade's own wallet before the bridge runs; `meridian_bridge_quote` previews the fee
-- `agent/src/agentLoop.ts` — background loop that keeps `MomentumStrategy` evaluating even with no caller connected, logging reasoning traces (`agent/src/decisionLog.ts`) that both `meridian_agent_thoughts` and the frontend's live monitor (`GET /api/agent-thoughts`) read from
-- `agent/src/venues/IndexTrader.ts` + `meridian_index_execute` — real execution path for The Index's tokenized equities (AAPL/NVDA/TSLA/MSFT/COIN) on Robinhood Chain via Uniswap v4, distinct from the cross-chain Wormhole bridge; `MomentumStrategy` now rotates the Index basket as its first-priority tradeable signal, not just narration
+Robinhood Chain (chain id 4663), Uniswap v4, viem, x402 / MPP, the OpenHermit
+SDK, TypeScript, React, and Vite.
 
-Next real decisions: which RWA venues you're sourcing liquidity from, whether
-Meridian custodies anything or is purely a router, which chains launch first —
-and packaging the trading strategy as an OpenHermit skill so the agent knows
-*when* to call the tools, not just *how*.
+---
+
+Not financial advice. Tokenized assets are volatile and you can lose money.
