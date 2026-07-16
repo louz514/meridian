@@ -32,11 +32,79 @@ real time and read its full, on-chain [track record](https://meridian402.xyz/tra
 
 ## Architecture
 
-A monorepo, built as a layer on [OpenHermit](https://github.com/HCF-STUDIOS/openhermit).
+Two things flow through Meridian: **users**, who sign in and talk to their own
+agent or watch the live desk, and **other agents**, who pay per call over x402
+for the tools Merid runs on. The backend is the hub. It provisions the LLM
+agents on OpenHermit, runs the market-making engine, settles trades on Robinhood
+Chain, and verifies payments on-chain.
+
+```mermaid
+flowchart TB
+    U([Human user])
+    EA([External AI agent])
+
+    subgraph FE["Frontend · Vercel"]
+        DESK[Live desk]
+        AUTH[Wallet sign-in]
+        CHAT[Your agent chat]
+    end
+
+    subgraph BE["Meridian backend · Railway"]
+        API[HTTP API]
+        MCP["MCP server<br/>x402-metered tools"]
+        LOOP["Agent loop · deterministic"]
+        subgraph ENGINE["Market-making engine"]
+            SCORE["Discover + score pools"]
+            GUARD[Rebalance phase machine]
+            EXEC[On-chain execution]
+        end
+        X402["x402 rail + revenue ledger"]
+        RISK[Risk caps]
+        ORCH[Research orchestration]
+    end
+
+    subgraph OH["OpenHermit gateway · Railway"]
+        MERID["Per-wallet Merid agents<br/>Sonnet"]
+        SWARM[RWA research swarm]
+        DB[(Postgres)]
+    end
+
+    subgraph CHAIN["Robinhood Chain · Uniswap v4"]
+        HW[House wallet]
+        POOLS[Tokenized-equity pools]
+    end
+
+    OR[[OpenRouter LLMs]]
+    EXA[[Exa web research]]
+
+    U --> DESK
+    U --> AUTH --> CHAT --> API
+    DESK -->|poll reasoning| API
+    EA -->|pay per call| MCP
+
+    API --> MERID
+    MERID -->|call tools| MCP
+    MCP --> X402
+    MERID --> OR
+    MERID --- DB
+
+    API --> SCORE
+    LOOP --> SCORE
+    SCORE --> GUARD --> EXEC
+    EXEC --> RISK --> HW --> POOLS
+    X402 -.verify USDG.-> POOLS
+
+    ORCH --> SWARM
+    SWARM --> EXA
+    SWARM --> OR
+    SWARM -->|findings| MCP
+```
+
+Built as a layer on [OpenHermit](https://github.com/HCF-STUDIOS/openhermit):
 OpenHermit is the agent runtime (durable state, sandboxed execution, fleet
-management, scheduling). Meridian supplies the domain. A "Meridian agent" is an
-OpenHermit agent with the Meridian tools enabled; Meridian does not run its own
-agent loop.
+management, scheduling). Meridian supplies the domain and does not run its own
+agent loop. A "Meridian agent" is an OpenHermit agent with the Meridian tools
+enabled.
 
 ```
 meridian/
