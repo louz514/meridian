@@ -7,9 +7,10 @@
 Meridian is a platform for the agentic economy. An autonomous agent named Merd
 makes markets in tokenized stocks (AAPL, NVDA, TSLA, GOOGL, META and more) on
 Robinhood Chain, entirely on-chain and fully transparent. Sign in with a wallet
-and you get your own Merd to talk to. Agents pay per call, from their own
-wallets, for the same market data and execution tools Merd runs on, metered
-over [x402](https://www.x402.org).
+and you get your own Merd to talk to and put to work: it quantifies real,
+self-custodied ways to earn and you sign each one yourself. Agents pay per call,
+from their own wallets, for the same market data and execution tools Merd runs
+on, metered over [x402](https://www.x402.org).
 
 **Live:** [meridian402.xyz](https://meridian402.xyz) · Watch the agent work in
 real time and read its full, on-chain [track record](https://meridian402.xyz/track-record).
@@ -22,8 +23,14 @@ real time and read its full, on-chain [track record](https://meridian402.xyz/tra
   own risk caps in code. Every position and every swap is on-chain and public.
 - **Gives every user their own agent.** Connect a wallet (sign a message, no
   account, no keys) and Meridian provisions a personal Merd instance you can
-  chat with immediately. Today it advises: it reasons over the live market and
-  tells you what it would do. It never touches your funds.
+  chat with immediately. It reasons over the live market and tells you what it
+  would do. It never touches your funds.
+- **Lets you earn from day one, self-custodied.** Your agent quantifies real,
+  on-chain earning paths and hands you the transaction to sign yourself: park
+  idle USDG at a measured rate, hold a position that pays out in tokenized
+  stocks from real trading fees, or send your agent scouting the RWA market for
+  USDG bounties on genuinely new venues it surfaces. You sign every transaction;
+  Meridian builds the calldata but holds no key and can move nothing.
 - **Sells its edge to other agents.** The signals and execution paths Merd
   trades on are exposed as tools any agent can call and pay for per use over
   x402: market data, LP scoring, carry quotes, the RWA universe map, and atomic
@@ -124,6 +131,9 @@ Key pieces in `agent/src`:
 - `venues/` and `lp*.ts` — pool discovery, LP scoring, and the market-making
   engine (phase machine, cost-aware rebalancing, realized-net accounting).
 - `deploy/myAgent.ts` — provisions and drives each user's personal Merd.
+- `earn/` — the advise-then-approve earn surface: quotes and user-signed
+  calldata for the carry and payout positions, plus scout-to-earn (agents hunt
+  new RWA venues for capped USDG bounties). Builds transactions; holds no key.
 - `payments/` — the x402 rail: an on-chain USDG facilitator with a replay
   ledger, and the paying side that settles tool calls hands-free.
 - `research/` — a fleet that maps the on-chain RWA universe and feeds the
@@ -136,14 +146,16 @@ Key pieces in `agent/src`:
 Honest about where this is.
 
 - **Live and real.** On-chain swaps and LP positions on Robinhood Chain's
-  Uniswap v4, the x402 revenue rail, per-wallet advisor agents, and the research
-  swarm are all running against mainnet. The track record is real capital marked
-  to market, not a backtest.
+  Uniswap v4, the x402 revenue rail, per-wallet agents, the three self-custodied
+  earn paths (carry, the stock-payout position, scout-to-earn bounties), and the
+  research swarm are all running against mainnet. The track record is real
+  capital marked to market, not a backtest.
 - **Small.** The house book runs at low size and is roughly break-even at
   current scale. Market-making margins are thin until volume and depth grow.
-- **Coming next.** Letting an agent trade *your* funds requires delegated,
-  scoped signing (session keys). Until that ships, your agent is an advisor and
-  never has custody of your wallet.
+- **Coming next.** Today your agent quantifies each earning path and you sign
+  it yourself. Letting the agent trade *your* funds on its own requires
+  delegated, scoped signing (session keys); until that ships, it advises and
+  approves, and never has custody of your wallet.
 
 ## Quickstart
 
