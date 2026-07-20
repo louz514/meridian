@@ -134,8 +134,8 @@ export async function prepareIndexYield(params: { address: string; amountUsd: nu
 
   if (direction === "exit") {
     const balance = await client.readContract({ address: INDEX_TOKEN, abi: balanceOfAbi, functionName: "balanceOf", args: [owner] });
-    if (balance === 0n) throw new Error("no $INDEX position to exit");
-    const steps = await missingApprovalSteps(owner, INDEX_TOKEN, INDEX_ROUTER, balance, "$INDEX");
+    if (balance === 0n) throw new Error("no payout position to exit");
+    const steps = await missingApprovalSteps(owner, INDEX_TOKEN, INDEX_ROUTER, balance, "payout position");
     const tokens = Number(balance) / 1e18;
     const expectedOutEth = tokens / indexPerEth;
     const minOut = BigInt(Math.round(expectedOutEth * 1e18)) * (10_000n - INDEX_SLIPPAGE_BPS) / 10_000n;
@@ -147,7 +147,7 @@ export async function prepareIndexYield(params: { address: string; amountUsd: nu
     });
     steps.push({
       kind: "swap",
-      description: `Sell all ${Math.round(tokens).toLocaleString()} $INDEX back to ETH`,
+      description: "Sell your full payout position back to ETH",
       to: swap.to,
       data: swap.data,
       value: swap.value.toString(),
@@ -162,7 +162,7 @@ export async function prepareIndexYield(params: { address: string; amountUsd: nu
       amountInUsd: tokens * indexPriceUsd,
       expectedOutEth,
       steps,
-      note: "Exits the FULL position (a partial exit below 10,000 tokens would silently stop distributions). The 3% hook fee applies on the way out too.",
+      note: "Exits the FULL position (a partial exit below the eligibility bar would silently stop payouts). The 3% fee applies on the way out too.",
     };
   }
 
@@ -218,13 +218,13 @@ export async function prepareIndexYield(params: { address: string; amountUsd: nu
       steps: [
         {
           kind: "swap",
-          description: `Buy ~${Math.round(ethNeeded * indexPerEth).toLocaleString()} $INDEX with ${ethNeeded.toFixed(5)} ETH`,
+          description: `Open the payout position with ${ethNeeded.toFixed(5)} ETH`,
           to: swap.to,
           data: swap.data,
           value: swap.value.toString(),
         } satisfies PreparedStep,
       ],
-      note: "The pool's 3% hook fee (it funds the distributions you'll receive) plus 1% LP fee and impact are inside the 6% slippage floor. Distributions land as stock tokens in your wallet.",
+      note: "The 3% entry fee funds the very payouts you'll receive; it plus pool fees and impact sit inside the 6% slippage floor. Payouts land as stock tokens in your wallet.",
     };
   }
 
@@ -265,6 +265,6 @@ export async function prepareIndexYield(params: { address: string; amountUsd: nu
     amountInUsd: amountUsd,
     eligibility,
     steps,
-    note: "The $INDEX pool is ETH-quoted, so this round converts USDG to ETH first. Once it lands, the entry is prepared against your real ETH balance.",
+    note: "The payout pool is ETH-quoted, so this round converts USDG to ETH first. Once it lands, the entry is prepared against your real ETH balance.",
   };
 }

@@ -696,7 +696,7 @@ app.post("/api/earn/prepare", async (req: Request, res: Response) => {
     res.json(await prepare({ address, amountUsd: Number(amountUsd), direction }));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const isValidation = /invalid|must be|no USDG|no syrupUSDG|no \$INDEX|not enough|above the/.test(msg);
+    const isValidation = /invalid|must be|no USDG|no syrupUSDG|no payout|not enough|above the/.test(msg);
     res.status(isValidation ? 400 : 502).json({ ok: false, error: msg });
   }
 });
