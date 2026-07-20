@@ -97,13 +97,18 @@ per-route HTTP 402s.
 Two live paths let a signed-in user earn without Meridian ever taking custody
 (`src/earn/`):
 
-- **Advise-then-approve carry.** `GET /api/earn/opportunities[?address=]`
-  quotes parking idle USDG in Maple's syrupUSDG at the MEASURED pool-drift APY
-  (yieldLogger), with the wallet's own idle balance and projections.
-  `POST /api/earn/prepare` `{address, amountUsd, direction: enter|exit}`
-  returns the ordered raw transactions (missing approvals, then the atomic v4
-  swap, recipient = the user) that the USER's wallet signs in the frontend.
-  This process holds no key for these flows and can move nothing.
+- **Advise-then-approve positions.** `GET /api/earn/opportunities[?address=]`
+  quotes both live positions with the wallet's own balances and projections:
+  the syrupUSDG carry at the MEASURED pool-drift APY (yieldLogger), and the
+  $INDEX distribution yield (implied APR, the ~10k-token eligibility
+  threshold, pending pot). `POST /api/earn/prepare`
+  `{address, amountUsd, direction: enter|exit, kind?: carry|index-yield}`
+  returns the ordered raw transactions (missing approvals, then the swap)
+  that the USER's wallet signs in the frontend. $INDEX entries from USDG are
+  two rounds (`complete:false, continueWith:"enter"`) because the funding leg
+  and the hook-pool entry live on different routers; the caller re-prepares
+  after the conversion lands so the buy is sized against real balances. This
+  process holds no key for these flows and can move nothing.
 - **Scout-to-earn.** `POST /api/earn/scout` (SIWE session bearer, same chat
   guards as `/api/my-agent/message`) sends the wallet's own agent on a
   scouting run for a tokenized-RWA venue the universe doesn't track yet. A

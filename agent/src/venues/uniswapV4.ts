@@ -65,7 +65,7 @@ function poolId(): Hex {
 }
 
 /** Live $INDEX-per-ETH price, read directly from the pool's own slot0 (no off-chain price needed for this leg). */
-async function readIndexPerEth(): Promise<number> {
+export async function readIndexPerEth(): Promise<number> {
   const client = getPublicClient();
   const id = poolId();
   const POOLS_SLOT = 6n;
@@ -156,22 +156,20 @@ const universalRouterAbi = [
 ];
 
 /**
- * One ETH<->$INDEX leg through the verified UniversalRouter, exact-input,
- * single pool, with an on-chain-derived slippage floor. `zeroForOne=true`
- * is ETH->INDEX (buy); false is INDEX->ETH (sell). Returns the real amount
- * received, decoded from the receipt's Transfer log — the actual fill,
- * reflecting real execution, not the pre-trade estimate — so callers can
- * track a true cost/proceeds basis instead of the nominal amountUsd.
+ * Encode one ETH<->$INDEX exact-in single-pool swap as a raw {to, data, value}
+ * transaction for ANY sender — extracted from the house execution path so the
+ * earn surface can hand a user a transaction THEIR wallet signs. Standard v4
+ * encoding on the VERIFIED indexUniversalRouter (see module comment); output
+ * goes to msg.sender via TAKE_ALL, so no recipient parameter exists to pin —
+ * whoever signs receives. Pure encoding: no reads, no signing, no approvals.
  */
-async function swapExactInSingle(params: {
+export function buildIndexSwapCalldata(params: {
   zeroForOne: boolean;
   amountIn: bigint;
   amountOutMinimum: bigint;
-}): Promise<{ hash: Hex; amountReceived: number | null }> {
+  deadlineSec?: number;
+}): { to: Address; data: Hex; value: bigint } {
   const { zeroForOne, amountIn, amountOutMinimum } = params;
-  const wallet = getWalletClient();
-  const signer = getAgentSigner()!;
-
   const swapParams = encodeAbiParameters(
     parseAbiParameters(
       "(address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) poolKey, bool zeroForOne, uint128 amountIn, uint128 amountOutMinimum, bytes hookData",
@@ -192,18 +190,35 @@ async function swapExactInSingle(params: {
     [swapParams, settleParams, takeParams],
   ]);
 
-  const deadline = BigInt(Math.floor(Date.now() / 1000) + 300);
+  const deadline = BigInt(params.deadlineSec ?? Math.floor(Date.now() / 1000) + 300);
   const data = encodeFunctionData({
     abi: universalRouterAbi,
     functionName: "execute",
     args: [V4_SWAP_COMMAND, [v4SwapInput], deadline],
   });
+  return { to: UNIVERSAL_ROUTER, data, value: zeroForOne ? amountIn : 0n };
+}
 
-  const hash = await wallet.sendTransaction({
-    to: UNIVERSAL_ROUTER,
-    data,
-    value: zeroForOne ? amountIn : 0n,
-  });
+/**
+ * One ETH<->$INDEX leg through the verified UniversalRouter, exact-input,
+ * single pool, with an on-chain-derived slippage floor. `zeroForOne=true`
+ * is ETH->INDEX (buy); false is INDEX->ETH (sell). Returns the real amount
+ * received, decoded from the receipt's Transfer log — the actual fill,
+ * reflecting real execution, not the pre-trade estimate — so callers can
+ * track a true cost/proceeds basis instead of the nominal amountUsd.
+ */
+async function swapExactInSingle(params: {
+  zeroForOne: boolean;
+  amountIn: bigint;
+  amountOutMinimum: bigint;
+}): Promise<{ hash: Hex; amountReceived: number | null }> {
+  const { zeroForOne, amountIn, amountOutMinimum } = params;
+  const wallet = getWalletClient();
+  const signer = getAgentSigner()!;
+
+  const { to, data, value } = buildIndexSwapCalldata({ zeroForOne, amountIn, amountOutMinimum });
+
+  const hash = await wallet.sendTransaction({ to, data, value });
   const client = getPublicClient();
   const receipt = await client.waitForTransactionReceipt({ hash });
   const outputToken = zeroForOne ? POOL_KEY.currency1 : POOL_KEY.currency0;

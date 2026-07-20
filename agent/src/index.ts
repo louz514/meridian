@@ -38,6 +38,7 @@ import { opportunitiesSnapshot } from "./signals/opportunities.js";
 import { validateFleet, recordFleet, exportBundle } from "./deploy/fleets.js";
 import { getAgentSigner, getAgentAddress, getPublicClient } from "./venues/signer.js";
 import { earnOpportunities, prepareCarry } from "./earn/carry.js";
+import { prepareIndexYield } from "./earn/yieldPosition.js";
 import { runScout, scoutAllowed, bountyBoard, settleBounties } from "./earn/scout.js";
 import { readStockBalances } from "./venues/positionAccounting.js";
 import { openPositions, withdrawPosition } from "./venues/lpPositions.js";
@@ -689,12 +690,13 @@ app.get("/api/earn/opportunities", async (req: Request, res: Response) => {
 app.options("/api/earn/prepare", (_req: Request, res: Response) => { setTradeCors(res); res.sendStatus(204); });
 app.post("/api/earn/prepare", async (req: Request, res: Response) => {
   setTradeCors(res);
-  const { address, amountUsd, direction } = req.body ?? {};
+  const { address, amountUsd, direction, kind } = req.body ?? {};
   try {
-    res.json(await prepareCarry({ address, amountUsd: Number(amountUsd), direction }));
+    const prepare = kind === "index-yield" ? prepareIndexYield : prepareCarry;
+    res.json(await prepare({ address, amountUsd: Number(amountUsd), direction }));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const isValidation = /invalid|must be|no USDG|no syrupUSDG|above the/.test(msg);
+    const isValidation = /invalid|must be|no USDG|no syrupUSDG|no \$INDEX|not enough|above the/.test(msg);
     res.status(isValidation ? 400 : 502).json({ ok: false, error: msg });
   }
 });

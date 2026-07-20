@@ -17,6 +17,7 @@ import {
 import { carryQuote, SYRUP, SYRUP_POOL_FEE, SYRUP_POOL_TICK_SPACING } from "../signals/carry.js";
 import { indexYieldData } from "../state.js";
 import { yieldSummary } from "../research/yieldLogger.js";
+import { indexPositionInfo } from "./yieldPosition.js";
 
 // Near-par stable pair (0.05% fee): 0.5% default slippage floor is generous
 // without being the stock pools' 8% (which would let a sandwich take half a
@@ -88,24 +89,34 @@ export async function earnOpportunities(address?: string): Promise<Record<string
     indexYield: {
       live: indexSnap.live,
       impliedAprPct: indexImpliedAprPct,
+      indexPriceUsd: indexSnap.indexPriceUsd,
       thresholdTokens: indexSnap.eligibilityThresholdTokens,
       thresholdUsd: Math.round(indexSnap.eligibilityThresholdUsd),
       entryFeePct: indexSnap.entryFeePct,
       pendingPotUsd: Math.round(indexSnap.pendingPotUsd),
       holderCount: indexSnap.holderCount,
       trend: indexSnap.trend,
-      executable: false,
-      reason: `distributions require holding ${indexSnap.eligibilityThresholdTokens.toLocaleString()} $INDEX (~$${Math.round(indexSnap.eligibilityThresholdUsd).toLocaleString()}), plus a ${indexSnap.entryFeePct}% entry fee — shown for context, not one-click`,
+      executable: true,
+      // Enough to clear the 10k-token threshold after the 6% slippage floor,
+      // with a little margin — what the UI's "eligibility" preset offers.
+      suggestedEntryUsd: indexSnap.eligibilityThresholdUsd > 0 ? Math.ceil(indexSnap.eligibilityThresholdUsd * 1.08) : null,
+      risks: [
+        "$INDEX price risk — it trades like a token, not a stable",
+        "distribution rate is volume-driven and volatile",
+        "3% hook fee on entry AND exit",
+        "smart-contract / hook risk",
+      ],
     },
   };
 
   if (address) {
     const client = getPublicClient();
     const owner = address as Address;
-    const [usdgRaw, syrupRaw, ethRaw] = await Promise.all([
+    const [usdgRaw, syrupRaw, ethRaw, index] = await Promise.all([
       client.readContract({ address: USDG, abi: balanceOfAbi, functionName: "balanceOf", args: [owner] }),
       client.readContract({ address: SYRUP, abi: balanceOfAbi, functionName: "balanceOf", args: [owner] }),
       client.getBalance({ address: owner }),
+      indexPositionInfo(address, indexSnap.indexPriceUsd),
     ]);
     const usdg = Number(usdgRaw) / DECIMALS;
     const syrup = Number(syrupRaw) / DECIMALS;
@@ -116,6 +127,7 @@ export async function earnOpportunities(address?: string): Promise<Record<string
       usdg,
       syrup,
       syrupValueUsdg,
+      index,
       eth: Number(ethRaw) / 1e18,
       projected:
         apr != null && usdg > 0
