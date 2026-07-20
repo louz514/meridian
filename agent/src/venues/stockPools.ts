@@ -27,7 +27,7 @@ import { fetchEthUsd } from "./uniswapV4.js";
 import { recordExecution, readAllExecutions } from "../executionsLog.js";
 
 const NATIVE: Address = "0x0000000000000000000000000000000000000000";
-const PERMIT2: Address = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+export const PERMIT2: Address = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 const POOL_MANAGER = INDEX_CONTRACTS.poolManager as Address;
 // The canonical UniversalRouter for Robinhood Chain. IMPORTANT: this fork's
 // V4Router does NOT accept the standard v4-periphery action encodings — it
@@ -40,8 +40,8 @@ const POOL_MANAGER = INDEX_CONTRACTS.poolManager as Address;
 // SWAP_EXACT_IN_SINGLE/SETTLE_ALL/TAKE_ALL encoding reverts here with
 // SliceOutOfBounds (0x3b99b53d); on indexUniversalRouter it silently reverts
 // for every stock pool. Do not "simplify" back to the standard encoding.
-const UNIVERSAL_ROUTER: Address = "0x8876789976dEcBfCbBbe364623C63652db8C0904";
-const USDG: Address = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"; // Robinhood's native stablecoin, assumed ~$1 like any USD stablecoin
+export const UNIVERSAL_ROUTER: Address = "0x8876789976dEcBfCbBbe364623C63652db8C0904";
+export const USDG: Address = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"; // Robinhood's native stablecoin, assumed ~$1 like any USD stablecoin
 
 type Quote = "NATIVE" | "USDG";
 
@@ -273,7 +273,7 @@ const ACTION_TAKE = "0x0e";
 const universalRouterAbi = [parseAbiItem("function execute(bytes commands, bytes[] inputs, uint256 deadline) payable")];
 
 /** One hop of a swap path: the pool is (input currency of this hop, outputCurrency) at (fee, tickSpacing). */
-interface RouteHop {
+export interface RouteHop {
   outputCurrency: Address;
   fee: number;
   tickSpacing: number;
@@ -284,12 +284,56 @@ interface RouteHop {
  * units compose across a path regardless of each currency's decimals — the
  * 1e18/1e6 scale factors are baked into the pool prices themselves.
  */
-async function hopRate(inputCurrency: Address, h: RouteHop): Promise<number> {
+export async function hopRate(inputCurrency: Address, h: RouteHop): Promise<number> {
   const key = sortedPoolKey(inputCurrency, h.outputCurrency, h.fee, h.tickSpacing);
   const sqrtPriceX96 = await readSqrtPriceX96(key);
   if (sqrtPriceX96 === 0n) throw new Error("pool not initialized at the expected key");
   const price = priceFromSqrt(sqrtPriceX96); // currency1 per currency0
   return key.currency0.toLowerCase() === inputCurrency.toLowerCase() ? price : 1 / price;
+}
+
+/**
+ * Encode one atomic multi-hop exact-in v4 swap as a raw {to, data, value}
+ * transaction for ANY sender — the same patched path encoding the house wallet
+ * executes with (see the UNIVERSAL_ROUTER comment for provenance), split out so
+ * the earn surface can hand a user a transaction THEIR wallet signs. Pure
+ * encoding: no reads, no signing, no approvals — the caller owns those.
+ */
+export function buildSwapExactInCalldata(params: {
+  currencyIn: Address;
+  route: RouteHop[];
+  amountIn: bigint;
+  amountOutMinimum: bigint;
+  /** who receives the output currency — the tx sender for user swaps */
+  recipient: Address;
+  deadlineSec?: number;
+}): { to: Address; data: Hex; value: bigint } {
+  const { currencyIn, route, amountIn, amountOutMinimum, recipient } = params;
+  const outputCurrency = route[route.length - 1].outputCurrency;
+
+  const swapParams = encodeAbiParameters(
+    parseAbiParameters(
+      "(address currencyIn, (address intermediateCurrency, uint24 fee, int24 tickSpacing, address hooks, bytes hookData)[] path, bytes extra, uint128 amountIn, uint128 amountOutMinimum) p",
+    ),
+    [
+      {
+        currencyIn,
+        path: route.map((h) => ({ intermediateCurrency: h.outputCurrency, fee: h.fee, tickSpacing: h.tickSpacing, hooks: NATIVE, hookData: "0x" as Hex })),
+        extra: "0x" as Hex,
+        amountIn,
+        amountOutMinimum,
+      },
+    ],
+  );
+  const settleParams = encodeAbiParameters(parseAbiParameters("address currency, uint256 amount, bool payerIsUser"), [currencyIn, 0n, true]);
+  const takeParams = encodeAbiParameters(parseAbiParameters("address currency, address recipient, uint256 amount"), [outputCurrency, recipient, 0n]);
+
+  const actions = encodePacked(["bytes1", "bytes1", "bytes1"], [ACTION_SWAP_EXACT_IN, ACTION_SETTLE, ACTION_TAKE]);
+  const v4SwapInput = encodeAbiParameters(parseAbiParameters("bytes actions, bytes[] params"), [actions, [swapParams, settleParams, takeParams]]);
+
+  const deadline = BigInt(params.deadlineSec ?? Math.floor(Date.now() / 1000) + 300);
+  const data = encodeFunctionData({ abi: universalRouterAbi, functionName: "execute", args: [V4_SWAP_COMMAND, [v4SwapInput], deadline] });
+  return { to: UNIVERSAL_ROUTER, data, value: currencyIn === NATIVE ? amountIn : 0n };
 }
 
 /**
@@ -323,31 +367,10 @@ async function swapExactInPath(params: {
 
   await ensureApprovedForSwap(currencyIn, amountIn);
 
-  const swapParams = encodeAbiParameters(
-    parseAbiParameters(
-      "(address currencyIn, (address intermediateCurrency, uint24 fee, int24 tickSpacing, address hooks, bytes hookData)[] path, bytes extra, uint128 amountIn, uint128 amountOutMinimum) p",
-    ),
-    [
-      {
-        currencyIn,
-        path: route.map((h) => ({ intermediateCurrency: h.outputCurrency, fee: h.fee, tickSpacing: h.tickSpacing, hooks: NATIVE, hookData: "0x" as Hex })),
-        extra: "0x" as Hex,
-        amountIn,
-        amountOutMinimum,
-      },
-    ],
-  );
-  const settleParams = encodeAbiParameters(parseAbiParameters("address currency, uint256 amount, bool payerIsUser"), [currencyIn, 0n, true]);
-  const takeParams = encodeAbiParameters(parseAbiParameters("address currency, address recipient, uint256 amount"), [outputCurrency, signer.address, 0n]);
-
-  const actions = encodePacked(["bytes1", "bytes1", "bytes1"], [ACTION_SWAP_EXACT_IN, ACTION_SETTLE, ACTION_TAKE]);
-  const v4SwapInput = encodeAbiParameters(parseAbiParameters("bytes actions, bytes[] params"), [actions, [swapParams, settleParams, takeParams]]);
-
-  const deadline = BigInt(Math.floor(Date.now() / 1000) + 300);
-  const data = encodeFunctionData({ abi: universalRouterAbi, functionName: "execute", args: [V4_SWAP_COMMAND, [v4SwapInput], deadline] });
+  const { to, data, value } = buildSwapExactInCalldata({ currencyIn, route, amountIn, amountOutMinimum, recipient: signer.address });
 
   const balanceBefore = await currencyBalance(outputCurrency, signer.address);
-  const hash = await wallet.sendTransaction({ to: UNIVERSAL_ROUTER, data, value: currencyIn === NATIVE ? amountIn : 0n });
+  const hash = await wallet.sendTransaction({ to, data, value });
   const client = getPublicClient();
   await client.waitForTransactionReceipt({ hash });
   const balanceAfter = await currencyBalance(outputCurrency, signer.address);

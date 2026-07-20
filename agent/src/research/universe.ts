@@ -203,3 +203,17 @@ export function getUniverseStore(): UniverseStore {
   if (!singleton) singleton = new UniverseStore();
   return singleton;
 }
+
+/**
+ * Whether a venue name is already known to the universe — same normalized-name
+ * key the upsert dedupes on, plus the anchor list. The scout-to-earn novelty
+ * gate: a bounty accrues only for names this returns false for.
+ */
+export function isKnownVenue(name: string): boolean {
+  const key = norm(name);
+  if (!key) return true; // unusable name counts as "not novel"
+  if (matchesAnchor(name)) return true;
+  return getUniverseStore()
+    .all()
+    .some((v) => norm(v.name) === key);
+}

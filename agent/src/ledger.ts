@@ -31,6 +31,7 @@ const LEDGER_FILES = [
   "accounts.jsonl",
   "agent-settings.jsonl",
   "basis-log.jsonl",
+  "bounties.jsonl",
   "equity-snapshots.jsonl",
   "executions.jsonl",
   "fleets.jsonl",

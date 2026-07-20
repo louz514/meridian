@@ -11,9 +11,13 @@ const NATIVE: Address = "0x0000000000000000000000000000000000000000";
 const USDG: Address = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
 // Maple syrupUSDG (6 decimals, same as USDG — pool price is the par ratio
 // directly). Pool key probed live 2026-07-13: fee 500 (0.05%), tickSpacing 10.
-const SYRUP: Address = "0x40858070814a57fdf33a613ae84fe0a8b4a874f7";
-const FEE = 500;
-const TICK_SPACING = 10;
+// Exported so the earn surface can build user-signed enter/exit swaps against
+// the same verified pool key.
+export const SYRUP: Address = "0x40858070814a57fdf33a613ae84fe0a8b4a874f7";
+export const SYRUP_POOL_FEE = 500;
+export const SYRUP_POOL_TICK_SPACING = 10;
+const FEE = SYRUP_POOL_FEE;
+const TICK_SPACING = SYRUP_POOL_TICK_SPACING;
 const Q96 = 2 ** 96;
 
 function poolId(): `0x${string}` {

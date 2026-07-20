@@ -37,6 +37,8 @@ import { startYieldLogger, yieldSummary } from "./research/yieldLogger.js";
 import { opportunitiesSnapshot } from "./signals/opportunities.js";
 import { validateFleet, recordFleet, exportBundle } from "./deploy/fleets.js";
 import { getAgentSigner, getAgentAddress, getPublicClient } from "./venues/signer.js";
+import { earnOpportunities, prepareCarry } from "./earn/carry.js";
+import { runScout, scoutAllowed, bountyBoard, settleBounties } from "./earn/scout.js";
 import { readStockBalances } from "./venues/positionAccounting.js";
 import { openPositions, withdrawPosition } from "./venues/lpPositions.js";
 import { realSellStockForUsdg, isTradable, TRADABLE_SYMBOLS } from "./venues/stockPools.js";
@@ -664,6 +666,77 @@ app.get("/api/my-agent/history", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("[my-agent] history failed:", err instanceof Error ? err.message : err);
     res.json({ ok: true, turns: [] });
+  }
+});
+
+// ---- Earn (live): advise-then-approve carry + scout-to-earn -----------------
+// /opportunities and /prepare are open reads: they quote public pool state and
+// build calldata the caller's OWN wallet must sign — nothing here holds a key
+// or moves funds. /scout is SIWE-gated (it spends real model tokens and accrues
+// real bounty) and runs under the same chat guards as /api/my-agent/message.
+app.get("/api/earn/opportunities", async (req: Request, res: Response) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  const address = typeof req.query.address === "string" ? req.query.address : undefined;
+  if (!address) res.setHeader("Cache-Control", "public, max-age=15, stale-while-revalidate=60");
+  try {
+    res.json(await earnOpportunities(address));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(msg === "invalid address" ? 400 : 502).json({ error: msg });
+  }
+});
+
+app.options("/api/earn/prepare", (_req: Request, res: Response) => { setTradeCors(res); res.sendStatus(204); });
+app.post("/api/earn/prepare", async (req: Request, res: Response) => {
+  setTradeCors(res);
+  const { address, amountUsd, direction } = req.body ?? {};
+  try {
+    res.json(await prepareCarry({ address, amountUsd: Number(amountUsd), direction }));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const isValidation = /invalid|must be|no USDG|no syrupUSDG|above the/.test(msg);
+    res.status(isValidation ? 400 : 502).json({ ok: false, error: msg });
+  }
+});
+
+app.get("/api/earn/bounties", (req: Request, res: Response) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  const address = typeof req.query.address === "string" ? req.query.address : undefined;
+  res.json(bountyBoard(address));
+});
+
+app.options("/api/earn/scout", (_req: Request, res: Response) => { setWalletCors(res); res.sendStatus(204); });
+app.post("/api/earn/scout", async (req: Request, res: Response) => {
+  setWalletCors(res);
+  const address = requireWallet(req, res);
+  if (!address) return;
+  // Bounty caps BEFORE the chat guards — a capped wallet shouldn't spend a turn.
+  const allowed = scoutAllowed(address);
+  if (!allowed.ok) { res.status(429).json({ ok: false, error: allowed.reason }); return; }
+  const guard = chatGuardSync(address);
+  if (guard) { res.status(guard.status).json({ ok: false, error: guard.error }); return; }
+  const slot = await acquireSlot();
+  if (!slot) { endTurn(address); res.status(503).json({ ok: false, error: "high demand right now — try again in a few seconds" }); return; }
+  try {
+    res.json(await runScout(address));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[earn/scout] failed:", msg);
+    const status = msg === "gateway_unconfigured" ? 503 : 502;
+    res.status(status).json({ ok: false, error: "your agent could not scout just now — try again shortly" });
+  } finally {
+    releaseSlot();
+    endTurn(address);
+  }
+});
+
+// Operator-only: pay accrued scout bounties in USDG from the house wallet.
+app.post("/api/admin/settle-bounties", async (req: Request, res: Response) => {
+  if (!authorized(req) || !config.mcpToken) { res.status(401).json({ error: "unauthorized" }); return; }
+  try {
+    res.json(await settleBounties());
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 

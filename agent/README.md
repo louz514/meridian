@@ -92,6 +92,29 @@ Because MCP multiplexes every call through one JSON-RPC endpoint, gating happens
 by inspecting `tools/call` before it reaches the MCP transport, not via
 per-route HTTP 402s.
 
+## Earn surfaces (user-facing HTTP)
+
+Two live paths let a signed-in user earn without Meridian ever taking custody
+(`src/earn/`):
+
+- **Advise-then-approve carry.** `GET /api/earn/opportunities[?address=]`
+  quotes parking idle USDG in Maple's syrupUSDG at the MEASURED pool-drift APY
+  (yieldLogger), with the wallet's own idle balance and projections.
+  `POST /api/earn/prepare` `{address, amountUsd, direction: enter|exit}`
+  returns the ordered raw transactions (missing approvals, then the atomic v4
+  swap, recipient = the user) that the USER's wallet signs in the frontend.
+  This process holds no key for these flows and can move nothing.
+- **Scout-to-earn.** `POST /api/earn/scout` (SIWE session bearer, same chat
+  guards as `/api/my-agent/message`) sends the wallet's own agent on a
+  scouting run for a tokenized-RWA venue the universe doesn't track yet. A
+  validated novel find is upserted into the universe credited `scout:<wallet>`
+  and accrues a small USDG bounty (`SCOUT_*` env caps bound the worst case;
+  attribution comes from the session, never from model output).
+  `GET /api/earn/bounties[?address=]` is the public board;
+  `POST /api/admin/settle-bounties` (operator bearer) pays balances above the
+  minimum from the house wallet through the same circuit breaker as every
+  other wallet op.
+
 ## RWA research fleet
 
 `src/research/` is a standing swarm: one OpenHermit agent per RWA market segment

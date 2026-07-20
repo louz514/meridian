@@ -92,4 +92,12 @@ export const config = {
   // The OpenHermit gateway the research fleet is provisioned on.
   gatewayUrl: process.env.OPENHERMIT_GATEWAY_URL ?? "http://127.0.0.1:4000",
   gatewayAdminToken: process.env.GATEWAY_ADMIN_TOKEN ?? "",
+
+  // Scout-to-earn: what one validated novel finding accrues, and the caps that
+  // bound the worst case (a sybil farm's daily take is maxDailyTotal, full stop).
+  // Settlement below scoutMinPayoutUsd is skipped so dust never pays gas.
+  scoutBountyUsd: Number(process.env.SCOUT_BOUNTY_USD ?? 0.1),
+  scoutMaxPerWalletPerDay: Number(process.env.SCOUT_MAX_PER_WALLET_PER_DAY ?? 3),
+  scoutMaxDailyTotalUsd: Number(process.env.SCOUT_MAX_DAILY_TOTAL_USD ?? 5),
+  scoutMinPayoutUsd: Number(process.env.SCOUT_MIN_PAYOUT_USD ?? 0.5),
 };

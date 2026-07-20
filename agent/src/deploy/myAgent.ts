@@ -285,13 +285,18 @@ async function ensureSession(gw: GatewayClient, agentId: string, sessionId: stri
   openedSessions.add(sessionId);
 }
 
-/** Send one turn to the wallet's agent and wait for its reply. */
-export async function messageUserAgent(address: string, text: string): Promise<AgentReply> {
+/**
+ * Send one turn to the wallet's agent and wait for its reply. System-driven
+ * turns (e.g. scout-to-earn runs) pass a sessionKind so they land in their own
+ * session on the SAME agent — persona and settings still apply, but the user's
+ * visible chat thread never fills with machine prompts and JSON replies.
+ */
+export async function messageUserAgent(address: string, text: string, opts?: { sessionKind?: string }): Promise<AgentReply> {
   const gw = gateway();
   if (!gw) throw new Error("gateway_unconfigured");
   await ensureUserAgent(address); // cheap after first call; guarantees the agent exists
   const agentId = agentIdForWallet(address);
-  const sessionId = sessionIdForWallet(address);
+  const sessionId = opts?.sessionKind ? `${opts.sessionKind}-${address.toLowerCase()}` : sessionIdForWallet(address);
   await ensureSession(gw, agentId, sessionId);
   const resp = await gw.agent(agentId).postMessageSync(sessionId, { text }, { timeout: 90_000 });
   return {
