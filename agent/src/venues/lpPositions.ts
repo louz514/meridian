@@ -16,9 +16,11 @@ import {
   type Hex,
 } from "viem";
 import { getPublicClient, getWalletClient, getAgentSigner } from "./signer.js";
+import { guardWalletOp, recordWalletOp } from "../risk.js";
 import { INDEX_CONTRACTS } from "./indexContracts.js";
 import { recordExecution } from "../executionsLog.js";
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { appendLedger } from "../ledger.js";
 import { dataPath } from "../dataDir.js";
 
 const POSITION_MANAGER: Address = "0x58daec3116aae6d93017baaea7749052e8a04fa7";
@@ -124,6 +126,8 @@ export interface LpPositionRecord {
  */
 export async function mintRange(params: { symbol: string; widthPct: number }): Promise<LpPositionRecord> {
   const { symbol, widthPct } = params;
+  guardWalletOp(`lp-mint ${symbol}`); // global runaway breaker (counts every deploy attempt)
+  recordWalletOp(0, "lp-mint");
   const k = poolKeyOf(symbol);
   const signer = getAgentSigner()!;
   const client = getPublicClient();
@@ -212,7 +216,7 @@ export async function mintRange(params: { symbol: string; widthPct: number }): P
     mintedAt: Date.now(),
     txHash: hash,
   };
-  appendFileSync(POSITIONS_PATH, JSON.stringify(record) + "\n");
+  appendLedger("lp-positions.jsonl", record);
   recordExecution({ ts: Date.now(), kind: "lp-mint", fromSymbol: "USDG", toSymbol: symbol, amountUsd: usdgIn * 2, success: true, txHash: hash });
   return record;
 }
@@ -376,7 +380,7 @@ export async function withdrawPosition(params: { tokenId: string; symbol: string
   });
   const receipt = await getPublicClient().waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") throw new Error(`withdraw reverted: ${hash}`);
-  appendFileSync(POSITIONS_PATH, JSON.stringify({ tokenId: params.tokenId, closedAt: Date.now(), txHash: hash }) + "\n");
+  appendLedger("lp-positions.jsonl", { tokenId: params.tokenId, closedAt: Date.now(), txHash: hash });
   recordExecution({ ts: Date.now(), kind: "lp-exit", fromSymbol: params.symbol, toSymbol: "USDG", amountUsd: 0, success: true, txHash: hash });
   return { txHash: hash };
 }

@@ -1,5 +1,5 @@
 // Wallet-native "your own agent, day one." A verified wallet (SIWE) gets its
-// OWN Merid instance provisioned on the OpenHermit gateway — real, isolated,
+// OWN Merd instance provisioned on the OpenHermit gateway — real, isolated,
 // and immediately conversational. Day-one scope is an advisor: it reasons over
 // Meridian's live signal and explains what it would trade and why, but moves no
 // funds (self-custody; live execution is a later, explicitly-enabled step).
@@ -8,10 +8,53 @@
 // talk to that agent through gw.agent(agentId), which owns the session/message
 // surface (postMessageSync, listSessionMessages).
 import { GatewayClient } from "@openhermit/sdk";
-import { appendFileSync } from "node:fs";
+import { appendLedger } from "../ledger.js";
 import { config } from "../config.js";
 import { dataPath } from "../dataDir.js";
 import { universe } from "../state.js";
+import { perpPersonaLine } from "../signals/perpFeed.js";
+import {
+  getAgentSettings,
+  sanitizeSettings,
+  updateAgentSettings,
+  type AgentSettings,
+  type RiskLevel,
+  type Style,
+  type FocusArea,
+} from "./agentSettings.js";
+
+const DEFAULT_AGENT_NAME = "Merd";
+
+/** The user-chosen name for this wallet's agent, or the default. */
+export function agentDisplayName(address: string): string {
+  return getAgentSettings(address).name || DEFAULT_AGENT_NAME;
+}
+
+// --- persona personalization: each preference becomes a plain-language line the
+// agent reads. Enums are trusted (validated on the way in); goal is sanitized.
+function riskLine(r: RiskLevel): string {
+  if (r === "conservative")
+    return `This person is CONSERVATIVE with risk. Lead with capital preservation: flag the downside first, prefer small or staged sizing, and never push them toward more risk than they asked for.`;
+  if (r === "aggressive")
+    return `This person is comfortable with RISK. You can surface higher-conviction, higher-variance ideas and larger sizing, but always state the downside honestly right alongside them.`;
+  return `This person wants a BALANCED approach. Weigh upside and downside evenly and suggest moderate sizing.`;
+}
+
+const FOCUS_LABEL: Record<FocusArea, string> = {
+  "market-making": "market-making / providing liquidity",
+  yield: "yield and carry (parking capital to earn)",
+  directional: "directional trades (taking a view on price)",
+  research: "research and market intelligence",
+};
+function focusLine(f: FocusArea[]): string {
+  return `Focus their attention on: ${f.map((x) => FOCUS_LABEL[x]).join(", ")}. Steer the conversation there; bring up other areas only if they ask.`;
+}
+
+function styleLine(s?: Style): string | null {
+  if (s === "concise") return `Style: keep replies especially short and to the point, even more than your default. A sentence or two.`;
+  if (s === "deep") return `Style: this person wants depth. When it helps, walk through the mechanics and the why, not just the bottom line.`;
+  return null; // "balanced" = the default talk rules below
+}
 
 const USER_AGENTS_PATH = dataPath("user-agents.jsonl");
 
@@ -96,13 +139,19 @@ function censusLine(): string {
 // real strategy and the FREE Meridian tools, and hard-codes the custody honesty
 // rules so it never claims to move funds it cannot touch.
 function personaFor(address: string): string {
+  const s = getAgentSettings(address);
+  const name = s.name || DEFAULT_AGENT_NAME;
   return [
-    `You are Merid, a market-making agent on Robinhood Chain, now running as the personal agent of the wallet ${shortAddr(address)} (${address.toLowerCase()}).`,
+    `You are ${name}, a market-making agent on Robinhood Chain, now running as the personal agent of the wallet ${shortAddr(address)} (${address.toLowerCase()}).`,
+    ...(name !== DEFAULT_AGENT_NAME ? [`${name} is the name this user gave you. Answer to it naturally; do not correct them back to "Merd".`] : []),
     ``,
     `Your job today is to be this person's hands-on market-making strategist for tokenized equities. You know the exact strategy Meridian's house agent runs live:`,
     `- Provide concentrated liquidity in depth-verified pools (NVDA, AAPL, TSLA, GOOGL, META against USDG on Uniswap v4).`,
     `- Earn the fee every trader pays. Re-center when price walks out of range, widen the range for the weekend, and step aside before toxic flow.`,
     `- Only enter a pool that clears a cost-aware bar (expected fees must beat roughly 3x the round-trip pool fee). Never churn for its own sake.`,
+    ...(s.goal ? [``, `What this person wants, in their own words: "${s.goal}". Keep it front of mind and tailor everything to it.`] : []),
+    ...(s.riskAppetite ? [``, riskLine(s.riskAppetite)] : []),
+    ...(s.focus && s.focus.length ? [focusLine(s.focus)] : []),
     ``,
     `For real-time positions, live prices, and exactly what the house agent is doing this minute, point the user to the live desk at meridian402.xyz. If any Meridian tools are wired into this session you may call them, but do not assume live data you cannot see. When you are unsure of a current number, say so plainly and reason from the strategy rather than inventing figures.`,
     ``,
@@ -116,8 +165,12 @@ function personaFor(address: string): string {
     `- Use "you" and "I". Get curious about them: what are they trying to do, how much are they thinking about putting in, how do they feel about risk. Ask, do not assume.`,
     `- Do not reintroduce yourself after your first message. Do not lecture. Cut all hype. Plain words, a little personality, and never any em dashes.`,
     `- Match their energy and length. A simple question gets a simple, direct answer.`,
+    ...(styleLine(s.style) ? [styleLine(s.style) as string] : []),
+    ``,
+    `If they ask what they can do here or how to get around Meridian: there are three areas. "Sign in" is where they talk to and customize you. "Tools" is the live market signals other agents pay for per call over x402. "Earn" explains how making markets and selling those signals earn, with the ability to fund you to trade their own money coming next. They can also rename you and set your risk appetite, focus, and style in the Customize panel. Point them to whichever fits, in a sentence.`,
     ``,
     censusLine(),
+    perpPersonaLine(),
   ]
     .filter(Boolean)
     .join("\n");
@@ -147,8 +200,8 @@ export async function ensureUserAgent(address: string): Promise<EnsureResult> {
   const existing = new Set((await gw.listAgents()).map((a) => a.agentId));
   const created = !existing.has(agentId);
   if (created) {
-    await gw.createAgent({ agentId, name: `Merid · ${shortAddr(address)}`, sandbox: null, ownerUserId: owner });
-    appendFileSync(USER_AGENTS_PATH, JSON.stringify({ address: address.toLowerCase(), agentId, at: Date.now() }) + "\n");
+    await gw.createAgent({ agentId, name: `${agentDisplayName(address)} · ${shortAddr(address)}`, sandbox: null, ownerUserId: owner });
+    appendLedger("user-agents.jsonl", { address: address.toLowerCase(), agentId, at: Date.now() });
   }
   // Wire the live signal feed via the CREDENTIAL-FREE public registration, and
   // make sure the operator-tokened "meridian" server is NOT enabled for this
@@ -181,6 +234,34 @@ export async function ensureUserAgent(address: string): Promise<EnsureResult> {
   await gw.setInstruction(agentId, "persona", personaFor(address));
   ensuredAt.set(agentId, Date.now());
   return { agentId, ready: true, created };
+}
+
+/**
+ * Update this wallet's agent settings (name, risk, focus, style, goal — any
+ * subset). Validates the patch, persists it, then re-applies the persona
+ * immediately so the change takes effect this turn (not on the next 5-min
+ * ensure). Returns the merged settings, or an { error } for the caller to 400.
+ */
+export async function setUserAgentSettings(address: string, patch: unknown): Promise<{ settings: AgentSettings } | { error: string }> {
+  const res = sanitizeSettings(patch);
+  if ("error" in res) return res;
+  const settings = updateAgentSettings(address, res.settings);
+  const gw = gateway();
+  if (gw) {
+    try {
+      await ensureUserAgent(address); // guarantees the agent exists (cheap after first call)
+      await gw.setInstruction(agentIdForWallet(address), "persona", personaFor(address));
+    } catch (err) {
+      // Settings are saved regardless; the persona also refreshes on the next ensure.
+      console.error("[my-agent] settings persona refresh failed:", err instanceof Error ? err.message : err);
+    }
+  }
+  return { settings };
+}
+
+/** Current settings for this wallet's agent (for the ensure/customize surface). */
+export function userAgentSettings(address: string): AgentSettings {
+  return getAgentSettings(address);
 }
 
 export interface AgentReply {

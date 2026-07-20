@@ -5,7 +5,8 @@
 // becomes "their account." The signature only proves control of the wallet;
 // it authorizes no transaction and moves no funds.
 import { randomBytes, createHmac, timingSafeEqual } from "node:crypto";
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { appendLedger } from "./ledger.js";
 import { verifyMessage, type Address } from "viem";
 import { dataPath } from "./dataDir.js";
 
@@ -179,6 +180,6 @@ export async function linkAccount(params: { address: string; nonce: string; sign
     return { ok: false, error: "malformed signature" };
   }
   if (!valid) return { ok: false, error: "signature does not match this wallet" };
-  appendFileSync(ACCOUNTS_PATH, JSON.stringify({ address: address.toLowerCase(), linkedAt: Date.now() }) + "\n");
+  appendLedger("accounts.jsonl", { address: address.toLowerCase(), linkedAt: Date.now() });
   return { ok: true, account: accountData(address)! };
 }

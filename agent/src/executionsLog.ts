@@ -4,7 +4,8 @@
 // explorer hours later. Every fill (or failure) appends here forever, and
 // the strategy's cooldown guard reads its ground truth from this file, not
 // from process memory that a restart wipes.
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { appendLedger } from "./ledger.js";
 import { dataPath } from "./dataDir.js";
 
 const LOG_PATH = dataPath("executions.jsonl");
@@ -21,7 +22,7 @@ export interface ExecutionRecord {
 }
 
 export function recordExecution(r: ExecutionRecord): void {
-  appendFileSync(LOG_PATH, JSON.stringify(r) + "\n");
+  appendLedger("executions.jsonl", r);
 }
 
 /** Most recent executions, newest first. */

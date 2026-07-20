@@ -1,4 +1,5 @@
 import { risk, x402, indexTrader, decisionLog } from "../state.js";
+import { withHouseWalletLock } from "../houseWallet.js";
 import { routingFeeUsd } from "../fees.js";
 import { recordExecution } from "../executionsLog.js";
 import type { IndexTradeResult } from "../venues/IndexTrader.js";
@@ -23,6 +24,9 @@ export type ExecuteIndexTradeOutcome =
  * two entry points.
  */
 export async function executeIndexTrade(params: ExecuteIndexTradeParams): Promise<ExecuteIndexTradeOutcome> {
+  // Serialize all house-wallet signing (see houseWallet.ts) so this can never
+  // submit a tx concurrently with the LP guard or another operator action.
+  return withHouseWalletLock("index-trade", async (): Promise<ExecuteIndexTradeOutcome> => {
   const { fromSymbol, toSymbol, amountUsd, payer, source = "manual" } = params;
 
   const sized = risk.size(amountUsd);
@@ -67,4 +71,5 @@ export async function executeIndexTrade(params: ExecuteIndexTradeParams): Promis
   }
 
   return { ...result, feeUsd, spentTodayUsd: risk.spentTodayUsd };
+  });
 }

@@ -4,11 +4,11 @@
 
 **Autonomous AI market-making for tokenized equities on Robinhood Chain.**
 
-Meridian is a platform for the agentic economy. An autonomous agent named Merid
+Meridian is a platform for the agentic economy. An autonomous agent named Merd
 makes markets in tokenized stocks (AAPL, NVDA, TSLA, GOOGL, META and more) on
 Robinhood Chain, entirely on-chain and fully transparent. Sign in with a wallet
-and you get your own Merid to talk to. Agents pay per call, from their own
-wallets, for the same market data and execution tools Merid runs on, metered
+and you get your own Merd to talk to. Agents pay per call, from their own
+wallets, for the same market data and execution tools Merd runs on, metered
 over [x402](https://www.x402.org).
 
 **Live:** [meridian402.xyz](https://meridian402.xyz) · Watch the agent work in
@@ -16,19 +16,19 @@ real time and read its full, on-chain [track record](https://meridian402.xyz/tra
 
 ## What it does
 
-- **Makes markets autonomously.** Merid provides concentrated liquidity in
+- **Makes markets autonomously.** Merd provides concentrated liquidity in
   tokenized-equity pools on Robinhood Chain's Uniswap v4, discovers which pools
   are worth being in, re-centers and rebalances as price moves, and enforces its
   own risk caps in code. Every position and every swap is on-chain and public.
 - **Gives every user their own agent.** Connect a wallet (sign a message, no
-  account, no keys) and Meridian provisions a personal Merid instance you can
+  account, no keys) and Meridian provisions a personal Merd instance you can
   chat with immediately. Today it advises: it reasons over the live market and
   tells you what it would do. It never touches your funds.
-- **Sells its edge to other agents.** The signals and execution paths Merid
+- **Sells its edge to other agents.** The signals and execution paths Merd
   trades on are exposed as tools any agent can call and pay for per use over
   x402: market data, LP scoring, carry quotes, the RWA universe map, and atomic
   execution. No subscriptions, no API keys.
-- **Shows its work.** A live desk streams Merid's reasoning as it happens, and a
+- **Shows its work.** A live desk streams Merd's reasoning as it happens, and a
   track record marks the book to market with real transaction hashes, including
   the losses.
 
@@ -36,7 +36,7 @@ real time and read its full, on-chain [track record](https://meridian402.xyz/tra
 
 Two things flow through Meridian: **users**, who sign in and talk to their own
 agent or watch the live desk, and **other agents**, who pay per call over x402
-for the tools Merid runs on. The backend is the hub. It provisions the LLM
+for the tools Merd runs on. The backend is the hub. It provisions the LLM
 agents on OpenHermit, runs the market-making engine, settles trades on Robinhood
 Chain, and verifies payments on-chain.
 
@@ -66,7 +66,7 @@ flowchart TB
     end
 
     subgraph OH["OpenHermit gateway · Railway"]
-        MERID["Per-wallet Merid agents<br/>Sonnet"]
+        MERID["Per-wallet Merd agents<br/>Sonnet"]
         SWARM[RWA research swarm]
         DB[(Postgres)]
     end
@@ -123,7 +123,7 @@ Key pieces in `agent/src`:
 
 - `venues/` and `lp*.ts` — pool discovery, LP scoring, and the market-making
   engine (phase machine, cost-aware rebalancing, realized-net accounting).
-- `deploy/myAgent.ts` — provisions and drives each user's personal Merid.
+- `deploy/myAgent.ts` — provisions and drives each user's personal Merd.
 - `payments/` — the x402 rail: an on-chain USDG facilitator with a replay
   ledger, and the paying side that settles tool calls hands-free.
 - `research/` — a fleet that maps the on-chain RWA universe and feeds the

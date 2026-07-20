@@ -1,6 +1,6 @@
-import express, { type Request, type Response } from "express";
+import express, { type Request, type Response, type NextFunction } from "express";
 import { randomUUID } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { dataPath } from "./dataDir.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
@@ -17,15 +17,24 @@ import { validateProfile, recordReservation, provisionUserAgent } from "./deploy
 import { runConsoleCommand } from "./console.js";
 import { GatewayClient } from "@openhermit/sdk";
 import { issueChallenge, linkAccount, accountData, mintSession, verifySession } from "./accounts.js";
-import { ensureUserAgent, messageUserAgent, userAgentHistory, streamUserAgent, sanitizeChunk } from "./deploy/myAgent.js";
+import { ensureUserAgent, messageUserAgent, userAgentHistory, streamUserAgent, sanitizeChunk, setUserAgentSettings, agentDisplayName, userAgentSettings } from "./deploy/myAgent.js";
 import { provisionResearchFleet, triggerResearchRun } from "./research/orchestration.js";
-import { rateLimitOk, tryBeginTurn, endTurn, acquireSlot, releaseSlot } from "./chatLimits.js";
-import { MarketMakingStrategy } from "./strategy/MarketMakingStrategy.js";
+import { rateLimitOk, tryBeginTurn, endTurn, acquireSlot, releaseSlot, chatLoad } from "./chatLimits.js";
+import { ResearchStrategy } from "./strategy/ResearchStrategy.js";
+import { withHouseWalletLock } from "./houseWallet.js";
+import { walletOps24h } from "./risk.js";
+import { securityHeaders, globalRateLimit, authRateLimit } from "./httpGuards.js";
+import { startBackups, backupStatus } from "./backup.js";
+import { initLedger, ledgerStatus } from "./ledger.js";
+import { scheduleOpenDeploy, runOpenDeploy, openDeployPreview } from "./openDeploy.js";
 import { lpProfit } from "./lpProfit.js";
 import { performanceSummary, startEquitySnapshotter } from "./performance.js";
 import { marketMakingProof } from "./marketMakingPnl.js";
 import { scanOpportunities, startLpAllocator } from "./lpAllocator.js";
 import { startBasisLogger } from "./research/basisLogger.js";
+import { startLighterLogger } from "./research/lighterLogger.js";
+import { startYieldLogger, yieldSummary } from "./research/yieldLogger.js";
+import { opportunitiesSnapshot } from "./signals/opportunities.js";
 import { validateFleet, recordFleet, exportBundle } from "./deploy/fleets.js";
 import { getAgentSigner, getAgentAddress, getPublicClient } from "./venues/signer.js";
 import { readStockBalances } from "./venues/positionAccounting.js";
@@ -63,7 +72,66 @@ process.on("uncaughtException", (err) => {
 });
 
 const app = express();
-app.use(express.json());
+// Behind Railway's proxy: trust one hop so req.ip is the real client (needed for
+// per-IP rate limiting), and stop advertising Express as the server.
+app.set("trust proxy", 1); // ONE hop (Railway's proxy). NOT `true`: that trusts the whole X-Forwarded-For chain, making req.ip the client-spoofable left-most value, which would let anyone bypass the per-IP rate limits by rotating a fake header.
+app.disable("x-powered-by");
+app.use(securityHeaders);
+app.use(globalRateLimit);
+app.use("/api/account", authRateLimit); // strict guard on the expensive sign-in path
+app.use(express.json({ limit: "128kb" }));
+
+// Lightweight in-memory request accounting so /api/ops can report live load
+// without an external APM. Resets on restart, like the other counters.
+const reqStats = { total: 0, since: Date.now(), byRoute: new Map<string, number>() };
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  reqStats.total += 1;
+  const route = "/" + req.path.split("/").filter(Boolean).slice(0, 2).join("/");
+  reqStats.byRoute.set(route, (reqStats.byRoute.get(route) ?? 0) + 1);
+  next();
+});
+
+// Operator-only ops snapshot: how we're handling load right now — chat
+// concurrency vs the cap, request volume, unique signups, memory, uptime.
+// Bearer-gated (MERIDIAN_MCP_TOKEN). All in-memory, so it resets on deploy.
+app.get("/api/ops", (req: Request, res: Response) => {
+  if (!authorized(req)) {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  const mem = process.memoryUsage();
+  const mb = (n: number) => Math.round((n / 1048576) * 10) / 10;
+  let signups = 0;
+  try {
+    const p = dataPath("accounts.jsonl");
+    if (existsSync(p)) {
+      const addrs = new Set<string>();
+      for (const l of readFileSync(p, "utf8").split("\n")) {
+        if (!l.trim()) continue;
+        try { addrs.add(String(JSON.parse(l).address).toLowerCase()); } catch {}
+      }
+      signups = addrs.size;
+    }
+  } catch {}
+  const chat = chatLoad();
+  const windowSec = Math.max(1, Math.round((Date.now() - reqStats.since) / 1000));
+  res.json({
+    uptimeSec: Math.round(process.uptime()),
+    memory: { rssMB: mb(mem.rss), heapUsedMB: mb(mem.heapUsed) },
+    chat: { ...chat, utilizationPct: Math.round((chat.active / chat.max) * 100) },
+    wallet: walletOps24h(), // house-wallet circuit-breaker state: 24h op count + notional vs caps
+    yields: yieldSummary(), // measured syrupUSDG APY (pool-price drift) + $INDEX distribution APR
+    backups: backupStatus(), // Postgres mirror of the durable files: alive, last run, restores
+    ledger: ledgerStatus(), // real-time row mirror: ready, inserted, failed, backfilled
+    requests: {
+      total: reqStats.total,
+      perMin: Math.round((reqStats.total / windowSec) * 60),
+      byRoute: Object.fromEntries([...reqStats.byRoute.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)),
+    },
+    signups,
+    now: Date.now(),
+  });
+});
 
 // Live sessions keyed by the id the transport hands out on initialize. The
 // OpenHermit client keeps one session across initialize -> tools/list -> calls,
@@ -214,6 +282,7 @@ app.get("/api/research-universe", (req: Request, res: Response) => {
 // CORS policy here doesn't carry the same risk it would on /mcp.
 app.get("/api/agent-thoughts", (req: Request, res: Response) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Cache-Control", "public, max-age=3, stale-while-revalidate=10"); // let browsers/CDN absorb the poll
   const requested = Number(req.query.limit);
   const limit = Number.isFinite(requested) && requested > 0 ? Math.min(requested, 50) : 20;
   res.json({ decisions: decisionLog.recent(limit), liveTradingEnabled: config.liveTradingEnabled });
@@ -222,8 +291,17 @@ app.get("/api/agent-thoughts", (req: Request, res: Response) => {
 // Live prices for the monitored basket (18 Index tickers) — what AssetTable
 // renders instead of a frozen mock file. Same open-CORS, read-only pattern as
 // /api/agent-thoughts: public market data, no wallet/payment surface.
+// Grounded opportunity feed: deterministic ranking over the measured samplers.
+// Public read (only observed on-chain/market data, no wallet surface), cached.
+app.get("/api/opportunities", (_req: Request, res: Response) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=60");
+  res.json(opportunitiesSnapshot());
+});
+
 app.get("/api/market-data", (_req: Request, res: Response) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Cache-Control", "public, max-age=5, stale-while-revalidate=15");
   res.json({ assets: market.listAssets(), source: market.dataSource() });
 });
 
@@ -238,6 +316,7 @@ let portfolioCache: { at: number; payload: unknown } | null = null;
 
 app.get("/api/portfolio", async (_req: Request, res: Response) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Cache-Control", "public, max-age=5, stale-while-revalidate=15");
   const walletAddress = getAgentAddress();
   if (!walletAddress) {
     res.json({ available: false, reason: "no wallet configured" });
@@ -290,6 +369,12 @@ app.get("/api/portfolio", async (_req: Request, res: Response) => {
     portfolioCache = { at: Date.now(), payload };
     res.json(payload);
   } catch (err) {
+    // A transient RPC hiccup (a rate-limit 429, say) shouldn't blank the UI:
+    // serve the last good snapshot if we have one, flagged stale.
+    if (portfolioCache) {
+      res.json({ ...(portfolioCache.payload as Record<string, unknown>), stale: true });
+      return;
+    }
     res.status(502).json({ available: false, reason: err instanceof Error ? err.message : String(err) });
   }
 });
@@ -460,10 +545,30 @@ app.post("/api/my-agent/ensure", async (req: Request, res: Response) => {
   if (!address) return;
   try {
     const result = await ensureUserAgent(address);
-    res.json({ ok: true, ...result });
+    res.json({ ok: true, ...result, name: agentDisplayName(address), settings: userAgentSettings(address) });
   } catch (err) {
     console.error("[my-agent] ensure failed:", err instanceof Error ? err.message : err);
     res.status(502).json({ ok: false, error: "could not reach the agent runtime — try again shortly" });
+  }
+});
+
+// Customize this wallet's agent (session-gated). Today: rename. The settings
+// store is an extensible object, so future knobs land here without a new route.
+app.options("/api/my-agent/settings", (_req: Request, res: Response) => { setWalletCors(res); res.sendStatus(204); });
+app.post("/api/my-agent/settings", async (req: Request, res: Response) => {
+  setWalletCors(res);
+  const address = requireWallet(req, res);
+  if (!address) return;
+  try {
+    const result = await setUserAgentSettings(address, req.body ?? {});
+    if ("error" in result) {
+      res.status(400).json({ ok: false, error: result.error });
+      return;
+    }
+    res.json({ ok: true, settings: result.settings });
+  } catch (err) {
+    console.error("[my-agent] settings failed:", err instanceof Error ? err.message : err);
+    res.status(502).json({ ok: false, error: "could not update your agent — try again shortly" });
   }
 });
 
@@ -685,26 +790,51 @@ app.post("/api/lp-close", async (req: Request, res: Response) => {
   }
   const toCash = (req.body ?? {}).toCash === true;
   try {
-    const closed: Array<{ tokenId: string; symbol: string; txHash: string }> = [];
-    for (const p of openPositions()) {
-      const r = await withdrawPosition({ tokenId: p.tokenId, symbol: p.symbol, liquidity: p.liquidity });
-      closed.push({ tokenId: p.tokenId, symbol: p.symbol, txHash: r.txHash });
-    }
-    const sold: Array<{ symbol: string; usdgReceived: number; txHash: string }> = [];
-    if (toCash) {
-      const addr = getAgentAddress();
-      const balances = addr ? await readStockBalances(addr) : {};
-      for (const [sym, qty] of Object.entries(balances)) {
-        if (qty > 1e-6 && isTradable(sym)) {
-          const r = await realSellStockForUsdg({ fromSymbol: sym });
-          sold.push({ symbol: sym, usdgReceived: r.usdgReceived, txHash: r.hash });
+    // Serialize against the LP guard's tick and any other operator action so a
+    // close can't interleave with an autonomous retile on the same wallet.
+    const { closed, sold } = await withHouseWalletLock("lp-close", async () => {
+      const closed: Array<{ tokenId: string; symbol: string; txHash: string }> = [];
+      for (const p of openPositions()) {
+        const r = await withdrawPosition({ tokenId: p.tokenId, symbol: p.symbol, liquidity: p.liquidity });
+        closed.push({ tokenId: p.tokenId, symbol: p.symbol, txHash: r.txHash });
+      }
+      const sold: Array<{ symbol: string; usdgReceived: number; txHash: string }> = [];
+      if (toCash) {
+        const addr = getAgentAddress();
+        const balances = addr ? await readStockBalances(addr) : {};
+        for (const [sym, qty] of Object.entries(balances)) {
+          if (qty > 1e-6 && isTradable(sym)) {
+            const r = await realSellStockForUsdg({ fromSymbol: sym });
+            sold.push({ symbol: sym, usdgReceived: r.usdgReceived, txHash: r.hash });
+          }
         }
       }
-    }
+      return { closed, sold };
+    });
     console.error(`[lp-close] closed ${closed.length} position(s)${toCash ? `, sold ${sold.length} holding(s) to USDG` : ""}`);
     res.json({ ok: true, closed, sold });
   } catch (err) {
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Operator-only: the one-shot open-deploy (convert idle ETH -> USDG -> LP per
+// the env plan). {dryRun:true} previews plan/prices/balances without moving
+// anything; a real POST executes immediately (same guarded path the scheduler
+// fires at the open). Bearer-required, same tier as lp-open/lp-close.
+app.post("/api/open-deploy", async (req: Request, res: Response) => {
+  if (!authorized(req) || !config.mcpToken) {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  try {
+    if ((req.body ?? {}).dryRun === true) {
+      res.json({ dryRun: true, ...(await openDeployPreview()) });
+      return;
+    }
+    res.json(await runOpenDeploy());
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -723,7 +853,9 @@ app.post("/api/lp-open", async (req: Request, res: Response) => {
     return;
   }
   try {
-    const pos = await openInPool(symbol, Number.isFinite(widthPct) && widthPct > 0 ? widthPct : undefined);
+    const pos = await withHouseWalletLock("lp-open", () =>
+      openInPool(symbol, Number.isFinite(widthPct) && widthPct > 0 ? widthPct : undefined),
+    );
     console.error(`[lp-open] opened #${pos.tokenId} in ${pos.symbol}`);
     res.json({ ok: true, ...pos });
   } catch (err) {
@@ -797,11 +929,25 @@ app.delete("/mcp", replaySessionRequest);
 // stays wired to meridian_suggest_route for callers who want a rotation route,
 // but it no longer drives the live desk — that was showing momentum reasoning
 // while the wallet was market-making.
-startAgentLoop(market, new MarketMakingStrategy(), decisionLog, config.agentThinkIntervalMs);
+startAgentLoop(market, new ResearchStrategy(), decisionLog, config.agentThinkIntervalMs);
 startLpGuard();
 startLpAllocator();
 startEquitySnapshotter();
 if (process.env.MERIDIAN_RUN_BASIS_LOGGER === "1") startBasisLogger();
+if (process.env.MERIDIAN_RUN_LIGHTER_LOGGER === "1") startLighterLogger();
+if (process.env.MERIDIAN_RUN_YIELD_LOGGER === "1") startYieldLogger();
+startBackups(); // Postgres mirror of the durable JSONL/JSON state + boot-time restore
+void initLedger(); // row-level Postgres ledger: table + one-time history backfill, then live dual-writes
+scheduleOpenDeploy(); // one-shot capital deployment at the next open, if a plan is configured
+
+// Global error handler (registered last): log the real error server-side and
+// return a generic message, so a route exception can never leak internals
+// (RPC/viem details, file paths, stack) to a caller.
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  console.error("[http] unhandled route error:", err instanceof Error ? err.stack : err);
+  if (res.headersSent) return;
+  res.status(500).json({ error: "internal error" });
+});
 
 app.listen(config.mcpPort, config.mcpHost, () => {
   const auth = config.mcpToken ? "bearer-auth" : "open (no token)";

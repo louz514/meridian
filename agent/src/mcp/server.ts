@@ -8,6 +8,7 @@ import { executeIndexTrade } from "../actions/executeIndexTrade.js";
 import { executeIndexYieldTrade } from "../actions/executeIndexYieldTrade.js";
 import { basisSnapshot } from "../signals/basis.js";
 import { carryQuote } from "../signals/carry.js";
+import { perpSnapshot } from "../signals/perpFeed.js";
 import { lpScores } from "../signals/lpScore.js";
 
 const CHAIN_IDS = ["solana", "ethereum", "base", "polygon", "robinhood"] as const;
@@ -138,6 +139,17 @@ export function buildServer(): McpServer {
       inputSchema: {},
     },
     async () => json(await basisSnapshot()),
+  );
+
+  server.registerTool(
+    "meridian_perp_feed",
+    {
+      title: "Perp venue feed (Lighter on Robinhood Chain)",
+      description:
+        "Live snapshot of the zero-fee zk-orderbook perp venue on Robinhood Chain: all markets with price, 24h volume, trade count, Lighter-native funding (flagged when it moves off baseline), Binance reference funding, and spot-vs-perp basis against Meridian's depth-verified v4 pools. The venue carries ~1000x the AMM's flow; this feed is the only machine-readable view of it. Priced per call via x402.",
+      inputSchema: {},
+    },
+    async () => json(await perpSnapshot()),
   );
 
   server.registerTool(

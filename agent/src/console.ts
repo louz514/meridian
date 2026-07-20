@@ -54,7 +54,7 @@ const HELP = [
 ];
 
 const WELCOME = [
-  "welcome — this is Merid, Meridian's own trading agent, live and auditable.",
+  "welcome — this is Merd, Meridian's own trading agent, live and auditable.",
   "it makes markets in tokenized stocks on Robinhood Chain from a public wallet.",
   "",
   "  · see it work:     try  status  ·  pnl  ·  trades",

@@ -8,6 +8,13 @@ export const robinhoodChain = {
   name: "Robinhood Chain",
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: { default: { http: [config.robinhoodRpcUrl || "https://rpc.mainnet.chain.robinhood.com"] } },
+  // Multicall3 at the canonical address (verified deployed on this chain).
+  // Declaring it lets viem's batch.multicall collapse dozens of concurrent
+  // reads into a single eth_call. Without it every readContract was a separate
+  // call, and under prod's polling load the public RPC 429s the oversized batch
+  // with a NON-array error body that viem surfaces as the cryptic
+  // "Cannot read properties of undefined (reading 'error')".
+  contracts: { multicall3: { address: "0xca11bde05977b3631167028862be2a173976ca11" as const } },
 } as const;
 
 /**
@@ -56,7 +63,10 @@ export function getPublicClient() {
   if (!publicClient) {
     publicClient = createPublicClient({
       chain: robinhoodChain,
-      transport: http(config.robinhoodRpcUrl, { batch: { wait: 100 } }),
+      // retryCount/retryDelay: the public RPC returns HTTP 429 under load; viem
+      // retries 429s with exponential backoff (honoring Retry-After), so a brief
+      // rate-limit window is ridden out instead of surfacing as a read failure.
+      transport: http(config.robinhoodRpcUrl, { batch: { wait: 100, batchSize: 10 }, retryCount: 4, retryDelay: 250 }),
       batch: { multicall: { wait: 50 } },
     });
   }

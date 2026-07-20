@@ -21,6 +21,7 @@ import {
   type Hex,
 } from "viem";
 import { getPublicClient, getWalletClient, getAgentSigner } from "./signer.js";
+import { guardWalletOp, recordWalletOp } from "../risk.js";
 import { INDEX_CONTRACTS } from "./indexContracts.js";
 import { fetchEthUsd } from "./uniswapV4.js";
 import { recordExecution, readAllExecutions } from "../executionsLog.js";
@@ -356,6 +357,21 @@ async function swapExactInPath(params: {
 const BRIDGE_HOP_TO_USDG: RouteHop = { outputCurrency: USDG, fee: BRIDGE_FEE, tickSpacing: BRIDGE_TICK_SPACING };
 const BRIDGE_HOP_TO_NATIVE: RouteHop = { outputCurrency: NATIVE, fee: BRIDGE_FEE, tickSpacing: BRIDGE_TICK_SPACING };
 
+/**
+ * Convert ~amountUsd of native ETH into USDG through the same bridge pool every
+ * ETH-entry trade already uses (proven path: first live trade + yield entries).
+ * Used to fund LP deployments from the wallet's idle ETH without touching any
+ * stock pool. Returns the realized USDG credited (measured balance delta).
+ */
+export async function realSwapEthToUsdg(params: { amountUsd: number }): Promise<{ hash: Hex; usdgReceived: number }> {
+  guardWalletOp(`eth->usdg $${params.amountUsd.toFixed(0)}`);
+  recordWalletOp(params.amountUsd, "eth-usdg");
+  const ethUsd = await fetchEthUsd();
+  const amountIn = BigInt(Math.round((params.amountUsd / ethUsd) * 1e18));
+  const { hash, amountOutReal } = await swapExactInPath({ currencyIn: NATIVE, route: [BRIDGE_HOP_TO_USDG], amountIn });
+  return { hash, usdgReceived: Number(amountOutReal) / 10 ** USDG_DECIMALS };
+}
+
 const USDG_DECIMALS = 6; // stock tokens and NATIVE are 18
 
 /** USD price of one `entry` token, derived on-chain (pool price × quote's USD value) — no off-chain feed needed for this leg, matching uniswapV4.ts's own pattern. */
@@ -432,6 +448,10 @@ export async function realSellStockForUsdg(params: {
   const entry = POOLS[params.fromSymbol];
   if (!entry) throw new Error(`no verified cheap pool for ${params.fromSymbol}`);
   if (entry.quote !== "USDG") throw new Error(`${params.fromSymbol} is not USDG-quoted`);
+  // A sell converts stock -> USDG: de-risking, an EXIT. Never breaker-blocked —
+  // a tripped breaker must not trap you from liquidating to cash. Recorded for
+  // visibility, but only additive ops (buys/mints) are guarded by guardWalletOp.
+  recordWalletOp(0, "lp-sell");
   const signer = getAgentSigner()!;
   const held = await currencyBalance(entry.token, signer.address);
   let amountIn = params.amountTokens ? BigInt(Math.round(params.amountTokens * 1e18)) : held;
@@ -468,6 +488,8 @@ export async function realBuyStockFromNative(params: {
   const { toSymbol, amountUsd } = params;
   const toEntry = POOLS[toSymbol];
   if (!toEntry) throw new Error(`no verified cheap pool for ${toSymbol}`);
+  guardWalletOp(`lp-buy ${toSymbol}`); // global runaway breaker
+  recordWalletOp(amountUsd, "lp-buy");
   const signer = getAgentSigner()!;
 
   const stockHop: RouteHop = { outputCurrency: toEntry.token, fee: toEntry.fee, tickSpacing: toEntry.tickSpacing };

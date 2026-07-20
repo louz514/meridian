@@ -7,7 +7,8 @@
 //             gateway, holding their own keys and paying for the Meridian
 //             MCP feed via x402. Contains no Meridian secrets by design.
 import { GatewayClient } from "@openhermit/sdk";
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { appendLedger } from "../ledger.js";
 import { config } from "../config.js";
 import { dataPath } from "../dataDir.js";
 
@@ -108,7 +109,7 @@ export function planFleet(spec: FleetSpec): AgentPlan[] {
 }
 
 export function recordFleet(spec: FleetSpec, kind: "hosted" | "export"): void {
-  appendFileSync(FLEETS_PATH, JSON.stringify({ ...spec, kind }) + "\n");
+  appendLedger("fleets.jsonl", { ...spec, kind });
 }
 
 /** Provision a fleet on OUR gateway. Queue-honest without an admin token. */

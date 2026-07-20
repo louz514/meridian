@@ -1,0 +1,123 @@
+// Durable-state backup: dual-homes every file the backend treats as a database
+// (the JSONL ledgers + JSON state on the single Railway volume) into Postgres,
+// and restores them on boot if the volume ever comes up empty. This closes the
+// "one volume, no backups" single point of failure WITHOUT touching any money
+// path — the files stay the working store; Postgres is the mirror.
+//
+//   · every 5 min (and once at boot): upsert each file's content, skipped when
+//     the content hash hasn't changed so idle files cost nothing
+//   · on boot, BEFORE the first snapshot: any file that exists in Postgres but
+//     is missing/empty locally is written back — a fresh volume self-heals
+//   · no DATABASE_URL → logs once and no-ops (local dev unaffected)
+//   · every operation is best-effort: a backup failure must never crash or
+//     block the operator
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import type pg from "pg";
+import { dataPath } from "./dataDir.js";
+import { getPool } from "./db.js";
+
+const TABLE = "meridian_file_snapshots";
+const INTERVAL_MS = Number(process.env.MERIDIAN_BACKUP_INTERVAL_MS ?? 5 * 60 * 1000);
+
+// The full durable-file universe (everything written via dataPath).
+const FILES = [
+  "accounts.jsonl",
+  "agent-settings.jsonl",
+  "basis-log.jsonl",
+  "equity-snapshots.jsonl",
+  "executions.jsonl",
+  "fleets.jsonl",
+  "lighter-log.jsonl",
+  "lp-guard-state.json",
+  "lp-opportunities.jsonl",
+  "lp-positions.jsonl",
+  "position-state.json",
+  "reservations.jsonl",
+  "revenue.jsonl",
+  "rwa-universe.json",
+  "user-agents.jsonl",
+  "wallet-ledger.jsonl",
+  "x402-used.jsonl",
+  "yield-log.jsonl",
+];
+
+const lastHash = new Map<string, string>();
+const status = { enabled: false, lastRunAt: 0, filesBackedUp: 0, restored: [] as string[], lastError: "" };
+
+async function ensureTable(p: pg.Pool): Promise<void> {
+  await p.query(
+    `CREATE TABLE IF NOT EXISTS ${TABLE} (
+       file text PRIMARY KEY,
+       content text NOT NULL,
+       updated_at timestamptz NOT NULL DEFAULT now()
+     )`,
+  );
+}
+
+/** Boot-time self-heal: pull back any file Postgres has that the volume lost. */
+async function restoreMissing(p: pg.Pool): Promise<void> {
+  const { rows } = await p.query<{ file: string; content: string }>(`SELECT file, content FROM ${TABLE}`);
+  for (const r of rows) {
+    if (!FILES.includes(r.file)) continue; // never restore a name we don't know
+    const local = dataPath(r.file);
+    const localEmpty = !existsSync(local) || readFileSync(local, "utf8").trim() === "";
+    if (localEmpty && r.content.trim() !== "") {
+      writeFileSync(local, r.content);
+      status.restored.push(r.file);
+      console.error(`[backup] RESTORED ${r.file} from Postgres (${r.content.length} bytes) — volume was missing it`);
+    }
+  }
+}
+
+async function snapshot(p: pg.Pool): Promise<void> {
+  let count = 0;
+  for (const f of FILES) {
+    const local = dataPath(f);
+    if (!existsSync(local)) continue;
+    const content = readFileSync(local, "utf8");
+    if (content.trim() === "") continue;
+    const hash = createHash("sha256").update(content).digest("hex");
+    if (lastHash.get(f) === hash) { count++; continue; } // unchanged — free
+    await p.query(
+      `INSERT INTO ${TABLE} (file, content, updated_at) VALUES ($1, $2, now())
+       ON CONFLICT (file) DO UPDATE SET content = EXCLUDED.content, updated_at = now()`,
+      [f, content],
+    );
+    lastHash.set(f, hash);
+    count++;
+  }
+  status.lastRunAt = Date.now();
+  status.filesBackedUp = count;
+  status.lastError = "";
+}
+
+/** For /api/ops: is the mirror alive, when did it last run, what got restored. */
+export function backupStatus() {
+  return { ...status, restored: [...status.restored] };
+}
+
+export function startBackups(): void {
+  const p = getPool();
+  if (!p) {
+    console.error("[backup] DATABASE_URL not set — Postgres mirror disabled (volume is the only copy)");
+    return;
+  }
+  status.enabled = true;
+  const run = async (first: boolean) => {
+    try {
+      if (first) {
+        await ensureTable(p);
+        await restoreMissing(p);
+      }
+      await snapshot(p);
+      if (first) console.error(`[backup] Postgres mirror active: ${status.filesBackedUp} files, every ${INTERVAL_MS / 60000}min`);
+    } catch (err) {
+      status.lastError = err instanceof Error ? err.message : String(err);
+      console.error(`[backup] failed (will retry next cycle): ${status.lastError}`);
+    }
+  };
+  void run(true);
+  const timer = setInterval(() => void run(false), INTERVAL_MS);
+  timer.unref?.();
+}

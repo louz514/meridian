@@ -7,7 +7,7 @@
 // Report-only by design: it surfaces the best opportunity; moving capital
 // stays a deliberate act (the momentum-churn lesson — never chase on a whim).
 import { keccak256, encodeAbiParameters, parseAbiParameters, parseAbiItem, type Address, type Hex } from "viem";
-import { appendFileSync } from "node:fs";
+import { appendLedger } from "./ledger.js";
 import { getPublicClient } from "./venues/signer.js";
 import { lpScores } from "./signals/lpScore.js";
 import { openPositions } from "./venues/lpPositions.js";
@@ -147,7 +147,7 @@ export async function scanOpportunities(capitalUsd = 160, widthPct = 2): Promise
   };
   cache = scan;
   try {
-    appendFileSync(dataPath("lp-opportunities.jsonl"), JSON.stringify({ ts: scan.ts, best: best?.pool ?? null, bestNet: best?.expectedNetPerDayUsd ?? 0, current: currentSymbol, rec: recommendation }) + "\n");
+    appendLedger("lp-opportunities.jsonl", { ts: scan.ts, best: best?.pool ?? null, bestNet: best?.expectedNetPerDayUsd ?? 0, current: currentSymbol, rec: recommendation });
   } catch {}
   return scan;
 }

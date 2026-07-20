@@ -1,4 +1,5 @@
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { appendLedger } from "../ledger.js";
 import { dataPath } from "../dataDir.js";
 
 const LEDGER_PATH = dataPath("revenue.jsonl");
@@ -28,7 +29,7 @@ export class RevenueLedger {
   record(tool: string, amountUsd: number, reference?: string): void {
     this.totalUsd += amountUsd;
     this.byTool[tool] = (this.byTool[tool] ?? 0) + amountUsd;
-    appendFileSync(LEDGER_PATH, JSON.stringify({ ts: Date.now(), tool, amountUsd, ...(reference ? { reference } : {}) }) + "\n");
+    appendLedger("revenue.jsonl", { ts: Date.now(), tool, amountUsd, ...(reference ? { reference } : {}) });
   }
 
   get totalRevenueUsd(): number {

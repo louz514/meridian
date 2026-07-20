@@ -1,36 +1,146 @@
 import { config } from "./config.js";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dataPath } from "./dataDir.js";
+import { appendLedger } from "./ledger.js";
+
+// Durable, rolling-24h ledger of every house-wallet money movement — trades AND
+// LP mints/swaps. Replaces the old in-memory `dailySpentUsd`, which only reset
+// on process restart, so the "daily" cap was really "spend since last boot":
+// long uptime falsely blocked, frequent redeploys never enforced. Now it's a
+// true rolling 24h window that survives restarts and covers the LP path too,
+// not just the (currently-off) directional trades.
+const LEDGER = dataPath("wallet-ledger.jsonl");
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Global runaway circuit breaker across ALL house-wallet ops. Generous on
+// purpose: it exists to halt a BUG looping mints/swaps, not to budget normal
+// activity (a busy real day is far under these). Tripping means "stop moving
+// money, a human should look." Env-tunable.
+const MAX_DAILY_WALLET_OPS = Number(process.env.MERIDIAN_MAX_DAILY_WALLET_OPS ?? 150);
+const MAX_DAILY_NOTIONAL_USD = Number(process.env.MERIDIAN_MAX_DAILY_NOTIONAL_USD ?? 25000);
+
+interface LedgerRow {
+  at: number;
+  usd: number;
+  kind: string;
+}
+
+function readWindow(): LedgerRow[] {
+  try {
+    if (!existsSync(LEDGER)) return [];
+    const cutoff = Date.now() - DAY_MS;
+    const rows: LedgerRow[] = [];
+    for (const line of readFileSync(LEDGER, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const r = JSON.parse(line);
+        if (typeof r.at === "number" && r.at >= cutoff) rows.push(r);
+      } catch {}
+    }
+    return rows;
+  } catch {
+    return []; // fail-open: never block money management on a disk read error
+  }
+}
+
+let _appendsSinceCompact = 0;
+function append(usd: number, kind: string): void {
+  try {
+    appendLedger("wallet-ledger.jsonl", { at: Date.now(), usd: Math.max(0, Number(usd) || 0), kind });
+    // Opportunistic compaction keeps this rolling-window file bounded, so reads
+    // stay O(recent) instead of O(all-time) as the agent runs for months. Single
+    // process + synchronous fs, so no append can interleave with the rewrite.
+    if (++_appendsSinceCompact >= 100) {
+      _appendsSinceCompact = 0;
+      compact();
+    }
+  } catch {}
+}
+
+function compact(): void {
+  try {
+    if (!existsSync(LEDGER)) return;
+    const cutoff = Date.now() - 2 * DAY_MS; // keep a 48h buffer beyond the 24h window
+    const kept = readFileSync(LEDGER, "utf8")
+      .split("\n")
+      .filter((line) => {
+        if (!line.trim()) return false;
+        try {
+          const r = JSON.parse(line);
+          return typeof r.at === "number" && r.at >= cutoff;
+        } catch {
+          return false;
+        }
+      });
+    writeFileSync(LEDGER, kept.length ? kept.join("\n") + "\n" : "");
+  } catch {}
+}
 
 /**
- * Server-side spend guard. The OpenHermit agent decides *what* to trade; these
- * caps are enforced here so a prompt can never talk the tools past them.
- * Deliberately simple (process-local, resets on restart) — swap in a durable
- * store when Meridian custodies real value.
+ * Per-trade clamp + rolling-daily spend guard for the directional trade paths
+ * (executeIndexTrade / executeIndexYieldTrade / MCP momentum). Same interface as
+ * before — the daily budget is now a durable rolling-24h window instead of an
+ * in-memory counter that reset on restart.
  */
 export class RiskLimiter {
-  private dailySpentUsd = 0;
-
-  /** Clamp a requested notional to the per-trade cap. */
   size(requestedUsd: number): number {
     const wanted = requestedUsd > 0 ? requestedUsd : config.maxTradeUsd;
     return Math.min(wanted, config.maxTradeUsd);
   }
 
-  /** Whether `amountUsd` fits under the remaining daily budget. */
   check(amountUsd: number): { ok: boolean; reason?: string } {
-    if (this.dailySpentUsd + amountUsd > config.maxDailyUsd) {
-      return {
-        ok: false,
-        reason: `daily limit reached ($${this.dailySpentUsd}/$${config.maxDailyUsd})`,
-      };
+    const spent = this.spentTodayUsd;
+    if (spent + amountUsd > config.maxDailyUsd) {
+      return { ok: false, reason: `daily trade limit reached ($${spent.toFixed(0)}/$${config.maxDailyUsd} in the last 24h)` };
     }
     return { ok: true };
   }
 
   record(amountUsd: number): void {
-    this.dailySpentUsd += amountUsd;
+    append(amountUsd, "trade");
   }
 
   get spentTodayUsd(): number {
-    return this.dailySpentUsd;
+    return readWindow()
+      .filter((r) => r.kind === "trade")
+      .reduce((s, r) => s + r.usd, 0);
   }
+}
+
+/**
+ * Global runaway breaker over ALL house-wallet money movement (LP mints/swaps +
+ * trades). Call BEFORE a deploying op. Throws if the rolling-24h op-count or
+ * notional would exceed the cap — the ceiling the LP path never had. Deliberately
+ * does NOT guard withdrawals/collects: getting OUT is always allowed. Fail-open
+ * on read errors (a disk hiccup must never freeze position management).
+ */
+export function guardWalletOp(label: string): void {
+  const rows = readWindow();
+  if (rows.length >= MAX_DAILY_WALLET_OPS) {
+    throw new Error(
+      `house-wallet circuit breaker OPEN: ${rows.length} ops in 24h >= ${MAX_DAILY_WALLET_OPS} (${label}) — halting money movement for manual review`,
+    );
+  }
+  const notional = rows.reduce((s, r) => s + r.usd, 0);
+  if (notional >= MAX_DAILY_NOTIONAL_USD) {
+    throw new Error(
+      `house-wallet circuit breaker OPEN: $${notional.toFixed(0)} notional in 24h >= $${MAX_DAILY_NOTIONAL_USD} (${label}) — halting for manual review`,
+    );
+  }
+}
+
+/** Record a completed LP-side money op into the shared rolling-24h ledger. */
+export function recordWalletOp(usd: number, kind = "lp"): void {
+  append(usd, kind);
+}
+
+/** Live view for /api/ops and the console. */
+export function walletOps24h(): { count: number; notionalUsd: number; maxOps: number; maxNotionalUsd: number } {
+  const rows = readWindow();
+  return {
+    count: rows.length,
+    notionalUsd: Math.round(rows.reduce((s, r) => s + r.usd, 0)),
+    maxOps: MAX_DAILY_WALLET_OPS,
+    maxNotionalUsd: MAX_DAILY_NOTIONAL_USD,
+  };
 }

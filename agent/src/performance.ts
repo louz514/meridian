@@ -3,7 +3,8 @@
 // executions.jsonl the cooldown guard trusts, plus a forward mark-to-market
 // series this module snapshots — so the "nothing to hide" thesis is a data
 // endpoint, not a claim. Read-only; safe on the open internet.
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { appendLedger } from "./ledger.js";
 import { parseAbiItem } from "viem";
 import { dataPath } from "./dataDir.js";
 import { getAgentAddress, getAgentSigner, getPublicClient } from "./venues/signer.js";
@@ -72,7 +73,7 @@ export function startEquitySnapshotter(): NodeJS.Timeout | undefined {
   const snap = async () => {
     try {
       const e = await computeEquityNow();
-      if (e) appendFileSync(EQUITY_PATH, JSON.stringify(e) + "\n");
+      if (e) appendLedger("equity-snapshots.jsonl", e);
     } catch {
       /* a missed snapshot is harmless; the series is sparse by design */
     }

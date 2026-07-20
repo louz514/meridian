@@ -6,7 +6,8 @@
 // NYSE, net of fees" is a tradable signal with a mechanical anchor — unlike
 // the momentum spread, which our own backtest showed trails buy-and-hold.
 // Run: npx tsx --env-file=.env src/research/basisLogger.ts   (one instance)
-import { appendFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { appendLedger } from "../ledger.js";
 import { fileURLToPath } from "node:url";
 import {
   createPublicClient,
@@ -30,6 +31,19 @@ const USDG: Address = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
 const Q96 = 2 ** 96;
 const SAMPLE_MS = Number(process.env.BASIS_SAMPLE_MS ?? 5 * 60 * 1000);
 const OUT = dataPath("basis-log.jsonl");
+// Bound the append-only log so it can't grow forever on the volume. ~2 weeks of
+// 5 tickers every 5min. Trimmed opportunistically (~every 4h of samples).
+const MAX_LINES = Number(process.env.BASIS_LOG_MAX_LINES ?? 20000);
+let _samplesSinceTrim = 0;
+function trimBasisLog(): void {
+  if (++_samplesSinceTrim < 50) return;
+  _samplesSinceTrim = 0;
+  try {
+    if (!existsSync(OUT)) return;
+    const lines = readFileSync(OUT, "utf8").split("\n").filter((l) => l.trim());
+    if (lines.length > MAX_LINES) writeFileSync(OUT, lines.slice(-MAX_LINES).join("\n") + "\n");
+  } catch {}
+}
 
 // Same five (symbol, fee, tickSpacing) as stockPools.POOLS — the depth-verified set.
 const TICKERS: [string, number, number][] = [
@@ -79,11 +93,12 @@ async function sample(): Promise<void> {
         nyseMarketTime: nyse.marketTime,
         nyseState: nyse.state,
       };
-      appendFileSync(OUT, JSON.stringify(row) + "\n");
+      appendLedger("basis-log.jsonl", row);
     } catch (err) {
-      appendFileSync(OUT, JSON.stringify({ ts, symbol, error: String(err) }) + "\n");
+      appendLedger("basis-log.jsonl", { ts, symbol, error: String(err) });
     }
   }
+  trimBasisLog();
 }
 
 /** Start the basis sampler in-process (used by the main server so it runs wherever the agent runs). */

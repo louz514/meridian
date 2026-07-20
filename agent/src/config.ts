@@ -62,6 +62,7 @@ export const config = {
     // Revenue tools for platform agents: the live pool-vs-market basis feed
     // (the premium signal) and current yield-carry terms.
     meridian_basis_feed: Number(process.env.PRICE_BASIS_FEED_USD ?? 0.1),
+    meridian_perp_feed: Number(process.env.PRICE_PERP_FEED_USD ?? 0.05),
     meridian_carry_quote: Number(process.env.PRICE_CARRY_QUOTE_USD ?? 0.02),
     meridian_lp_score: Number(process.env.PRICE_LP_SCORE_USD ?? 0.05),
   } as Record<string, number>,

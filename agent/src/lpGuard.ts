@@ -22,6 +22,36 @@ import { getAgentSigner, getPublicClient } from "./venues/signer.js";
 import { readStockBalances } from "./venues/positionAccounting.js";
 import { latestScan, scanOpportunities } from "./lpAllocator.js";
 import { parseAbiItem, type Address } from "viem";
+import { withHouseWalletLock } from "./houseWallet.js";
+import { readFileSync as _rf, writeFileSync as _wf, existsSync as _ex } from "node:fs";
+import { dataPath } from "./dataDir.js";
+
+// Durable anti-churn state. The rebalance/recovery cooldowns and the recovery
+// failure count MUST survive a redeploy — otherwise every restart silently
+// resets the guards that prevent oscillation, and a fresh boot could immediately
+// re-rebalance or re-recover a position that should still be on cooldown. The
+// clock-derived phase state is already restart-safe; this covers the counters
+// that aren't. Persisted to the /data volume.
+const GUARD_STATE_PATH = dataPath("lp-guard-state.json");
+function loadGuardState(): { lastRebalanceAt: number; lastRecoveryAt: number; recoveryFailures: number } {
+  try {
+    if (_ex(GUARD_STATE_PATH)) {
+      const s = JSON.parse(_rf(GUARD_STATE_PATH, "utf8"));
+      return {
+        lastRebalanceAt: Number(s.lastRebalanceAt) || 0,
+        lastRecoveryAt: Number(s.lastRecoveryAt) || 0,
+        recoveryFailures: Number(s.recoveryFailures) || 0,
+      };
+    }
+  } catch {}
+  return { lastRebalanceAt: 0, lastRecoveryAt: 0, recoveryFailures: 0 };
+}
+function saveGuardState(): void {
+  try {
+    _wf(GUARD_STATE_PATH, JSON.stringify({ lastRebalanceAt, lastRecoveryAt, recoveryFailures }));
+  } catch {}
+}
+const _guardState = loadGuardState();
 
 const USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168" as const;
 const CHECK_MS = 5 * 60 * 1000;
@@ -54,7 +84,7 @@ const AUTO_REBALANCE = process.env.MERIDIAN_AUTO_REBALANCE === "1";
 const REBALANCE_MIN_GAIN_USD_DAY = Number(process.env.MERIDIAN_REBALANCE_MIN_GAIN_USD ?? 2);
 const REBALANCE_MAX_PAYBACK_DAYS = Number(process.env.MERIDIAN_REBALANCE_MAX_PAYBACK_DAYS ?? 2);
 const REBALANCE_COOLDOWN_MS = Number(process.env.MERIDIAN_REBALANCE_COOLDOWN_HOURS ?? 8) * 60 * 60 * 1000;
-let lastRebalanceAt = 0;
+let lastRebalanceAt = _guardState.lastRebalanceAt;
 
 export type Phase = "weekend" | "weekday-market" | "weekday-off";
 
@@ -136,12 +166,12 @@ const MIN_RECOVERY_USD = 50;
 const HARD_RECOVERY_CAP_USD = Number(process.env.MERIDIAN_MAX_RECOVERY_USD ?? 2000);
 const RECOVERY_COOLDOWN_MS = 15 * 60 * 1000;
 const MAX_RECOVERY_FAILURES = 3;
-let lastRecoveryAt = 0;
-let recoveryFailures = 0;
+let lastRecoveryAt = _guardState.lastRecoveryAt;
+let recoveryFailures = _guardState.recoveryFailures;
 const USDG_ADDR: Address = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
 
 async function attemptRecovery(): Promise<void> {
-  if (Date.now() - lastRecoveryAt > 2 * 60 * 60 * 1000) recoveryFailures = 0; // fresh chance after a long quiet gap
+  if (Date.now() - lastRecoveryAt > 2 * 60 * 60 * 1000 && recoveryFailures !== 0) { recoveryFailures = 0; saveGuardState(); } // fresh chance after a long quiet gap
   if (Date.now() - lastRecoveryAt < RECOVERY_COOLDOWN_MS) return;
   if (recoveryFailures >= MAX_RECOVERY_FAILURES) return; // gave up — needs manual attention
 
@@ -175,14 +205,17 @@ async function attemptRecovery(): Promise<void> {
   }
 
   lastRecoveryAt = Date.now();
+  saveGuardState();
   try {
     console.error(`[lpGuard] AUTO-RECOVERY: flat with $${deployable.toFixed(2)} deployable, re-entering ${target} (last pool).`);
     await rebalanceSides(target);
     const pos = await mintRange({ symbol: target, widthPct: TIGHT_WIDTH_PCT });
     recoveryFailures = 0;
+    saveGuardState();
     console.error(`[lpGuard] ✓ recovered as #${pos.tokenId} (${target})`);
   } catch (err) {
     recoveryFailures++;
+    saveGuardState();
     console.error(`[lpGuard] ✗ recovery failed (${recoveryFailures}/${MAX_RECOVERY_FAILURES}): ${err instanceof Error ? err.message.slice(0, 120) : err} — capital safe in wallet.`);
   }
 }
@@ -268,6 +301,7 @@ async function maybeRebalance(positions: LpPositionRecord[]): Promise<boolean> {
   if (gain < REBALANCE_MIN_GAIN_USD_DAY || paybackDays > REBALANCE_MAX_PAYBACK_DAYS) return false;
 
   lastRebalanceAt = Date.now();
+  saveGuardState();
   console.error(
     `[lpGuard] AUTO-REBALANCE ${currentSymbol} → ${best.symbol}: +$${gain.toFixed(2)}/day, ~$${switchCost.toFixed(2)} switch, payback ${paybackDays.toFixed(1)}d`,
   );
@@ -321,7 +355,10 @@ export function startLpGuard(): NodeJS.Timeout {
     }
     checking = true;
     try {
-      await runCheck();
+      // Hold the global house-wallet lock for the whole tick so an operator
+      // endpoint (lp-open/lp-close/index-trade) can't interleave a tx with a
+      // retile/rebalance mid-flight. `checking` still de-dups overlapping ticks.
+      await withHouseWalletLock("lpGuard.tick", runCheck);
     } finally {
       checking = false;
     }

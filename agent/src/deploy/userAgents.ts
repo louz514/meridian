@@ -3,7 +3,8 @@
 // OpenHermit gateway, wired to the Meridian MCP signal feed (x402-priced).
 // That onboarding is deliberately invisible from the frontend: nothing in the
 // UI or bundle names the ecosystem, the plumbing lives entirely back here.
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { appendLedger } from "../ledger.js";
 import { fileURLToPath } from "node:url";
 import { provisionFleetSpec, provisionAllFleets, fleetIdFor, type FleetSpec } from "./fleets.js";
 import { dataPath } from "../dataDir.js";
@@ -34,7 +35,7 @@ export function validateProfile(body: unknown): ReservedProfile | null {
 
 /** Append-only reservation ledger; survives restarts, drainable later. */
 export function recordReservation(p: ReservedProfile): void {
-  appendFileSync(RESERVATIONS_PATH, JSON.stringify(p) + "\n");
+  appendLedger("reservations.jsonl", p);
 }
 
 /** A reserved profile IS a fleet of one — same spec, same pipeline. */

@@ -1,4 +1,5 @@
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { appendLedger } from "../ledger.js";
 import type { Address } from "viem";
 import { getPublicClient } from "../venues/signer.js";
 import { dataPath } from "../dataDir.js";
@@ -73,7 +74,7 @@ export class PaymentGate {
 
   private burnTx(txHash: string, resource: string, amountUsd: number): void {
     this.loadUsed().add(txHash.toLowerCase());
-    appendFileSync(USED_TX_PATH, JSON.stringify({ txHash: txHash.toLowerCase(), resource, amountUsd, at: Date.now() }) + "\n");
+    appendLedger("x402-used.jsonl", { txHash: txHash.toLowerCase(), resource, amountUsd, at: Date.now() });
   }
 
   async verify(
