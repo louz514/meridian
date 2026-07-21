@@ -5,3 +5,6 @@ node_modules/
 dist/
 position-state.json
 .vercel
+
+# session-key spike state (deployed addresses, no secrets)
+_sk-state.json
