@@ -69,19 +69,24 @@ const POOLS: Record<string, PoolEntry> = {
   META: { token: INDEX_CONTRACTS.tokens.META as Address, quote: "USDG", fee: 3000, tickSpacing: 60 },
   NVDA: { token: INDEX_CONTRACTS.tokens.NVDA as Address, quote: "USDG", fee: 3000, tickSpacing: 60 },
   TSLA: { token: INDEX_CONTRACTS.tokens.TSLA as Address, quote: "USDG", fee: 3000, tickSpacing: 60 },
-  // SPCX REMOVED 2026-07-16: it's deep ($20.9k) and high-volume (#1 stock pool),
-  // BUT a real mint reverted with 0x70a08… (balanceOf selector) — SPCX (SpaceX)
-  // is almost certainly a TRANSFER-RESTRICTED token (whitelisted holders only),
-  // so our wallet can't receive it and can't LP it. Depth ≠ tradability. Stays
-  // in discovery (poolCandidates) for visibility, but NOT executable until a
-  // transfer-restriction check proves our wallet can hold it. Do not re-add
-  // without verifying a real swap USDG→SPCX lands.
+  // MSFT re-added 2026-07-21: excluded before only for DEPTH (the 0.05% tier was
+  // ~$12), but the 0.3% pool has since deepened to ~$40k and a USDG→MSFT swap
+  // lands in faithful eth_call simulation (holdable). Tradable now; LP-deploy is
+  // still gated on a mint check (poolQualify.ts), not enabled here.
+  MSFT: { token: INDEX_CONTRACTS.tokens.MSFT as Address, quote: "USDG", fee: 3000, tickSpacing: 60 },
+  // SPCX still EXCLUDED. Removed 2026-07-16 after a real mint reverted (0x70a08…):
+  // SPCX (SpaceX) is a TRANSFER-RESTRICTED token, so our wallet couldn't receive
+  // or LP it. Re-checked 2026-07-21: a USDG→SPCX swap now LANDS in faithful
+  // eth_call sim (restriction may have lifted, or we're allowlisted) — but the
+  // rule stands: do not re-add on simulation alone. Needs a REAL swap + mint to
+  // confirm before this becomes executable.
 };
-// Excluded, re-measured 2026-07-16 (max USDG in at ~1% impact): MSFT/USDG 0.05%
-// ~$12, MU/USDG 1% ~$15, AMD/USDG 1% ~$40 — the allocator's high "$/day" for
-// these came from us being ~100% of a TINY pool (unreliable, un-deployable at
-// our size). Older 2026-07-11 notes: PLTR/SNDK dust; AMZN/COIN/CRWV/INTC/ORCL
-// NATIVE-quoted dust; BE/USAR no pool. Re-measure before re-adding any.
+// Excluded, re-measured 2026-07-16 (max USDG in at ~1% impact): MU/USDG 1% ~$15,
+// AMD/USDG 1% ~$40 — the allocator's high "$/day" for these came from us being
+// ~100% of a TINY pool (unreliable, un-deployable at our size). (MSFT was here
+// too until 2026-07-21, when its 0.3% pool deepened to ~$40k — now in POOLS.)
+// Older 2026-07-11 notes: PLTR/SNDK dust; AMZN/COIN/CRWV/INTC/ORCL NATIVE-quoted
+// dust; BE/USAR no pool. Re-measure before re-adding any.
 
 const BRIDGE_FEE = 500; // 0.05% NATIVE/USDG tier — deepest of the four real tiers found, used when a rotation's two legs don't share a quote currency
 const BRIDGE_TICK_SPACING = 10;
