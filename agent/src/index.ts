@@ -19,6 +19,7 @@ import { GatewayClient } from "@openhermit/sdk";
 import { issueChallenge, linkAccount, accountData, mintSession, verifySession } from "./accounts.js";
 import { ensureUserAgent, messageUserAgent, userAgentHistory, streamUserAgent, sanitizeChunk, setUserAgentSettings, agentDisplayName, userAgentSettings } from "./deploy/myAgent.js";
 import { checkMerdGate, gateMessage, MerdGateError } from "./deploy/tokenGate.js";
+import { vaultStatus, buildVaultSetup, buildVaultRevoke } from "./custody/vault.js";
 import { provisionResearchFleet, triggerResearchRun } from "./research/orchestration.js";
 import { rateLimitOk, tryBeginTurn, endTurn, acquireSlot, releaseSlot, chatLoad } from "./chatLimits.js";
 import { ResearchStrategy } from "./strategy/ResearchStrategy.js";
@@ -725,6 +726,48 @@ app.get("/api/earn/bounties", (req: Request, res: Response) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   const address = typeof req.query.address === "string" ? req.query.address : undefined;
   res.json(bountyBoard(address));
+});
+
+// ---- Custody (auto-trading vaults) · PREVIEW ----
+// Behind CUSTODY_SESSION_MASTER: dormant until configured, and never exposed to
+// the live site until the scope is tightened + audited. Owner actions return
+// calldata the USER signs; the backend signs nothing here. Balances are public,
+// so status is an open read; setup/revoke are session-gated to the user's own
+// vault (the session address IS the wallet — no body address to spoof).
+app.get("/api/custody/status", async (req: Request, res: Response) => {
+  setTradeCors(res);
+  const address = typeof req.query.address === "string" ? req.query.address : "";
+  try {
+    res.json(await vaultStatus(address));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(/invalid|address/.test(msg) ? 400 : 502).json({ enabled: false, error: msg });
+  }
+});
+
+app.options("/api/custody/prepare-setup", (_req: Request, res: Response) => { setWalletCors(res); res.sendStatus(204); });
+app.post("/api/custody/prepare-setup", async (req: Request, res: Response) => {
+  setWalletCors(res);
+  const address = requireWallet(req, res);
+  if (!address) return;
+  try {
+    res.json(await buildVaultSetup(address));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(msg === "custody_disabled" ? 503 : 502).json({ ok: false, error: msg === "custody_disabled" ? "auto-trading isn't enabled yet" : msg });
+  }
+});
+
+app.options("/api/custody/prepare-revoke", (_req: Request, res: Response) => { setWalletCors(res); res.sendStatus(204); });
+app.post("/api/custody/prepare-revoke", async (req: Request, res: Response) => {
+  setWalletCors(res);
+  const address = requireWallet(req, res);
+  if (!address) return;
+  try {
+    res.json(await buildVaultRevoke(address));
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 app.options("/api/earn/scout", (_req: Request, res: Response) => { setWalletCors(res); res.sendStatus(204); });
