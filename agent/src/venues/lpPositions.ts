@@ -18,6 +18,7 @@ import {
 import { getPublicClient, getWalletClient, getAgentSigner } from "./signer.js";
 import { guardWalletOp, recordWalletOp } from "../risk.js";
 import { INDEX_CONTRACTS } from "./indexContracts.js";
+import { cachedQualified } from "../signals/poolQualify.js";
 import { recordExecution } from "../executionsLog.js";
 import { existsSync, readFileSync } from "node:fs";
 import { appendLedger } from "../ledger.js";
@@ -46,6 +47,10 @@ const LP_POOLS: Record<string, { token: Address; fee: number; tickSpacing: numbe
   AAPL: { token: INDEX_CONTRACTS.tokens.AAPL as Address, fee: 10000, tickSpacing: 200 },
   GOOGL: { token: INDEX_CONTRACTS.tokens.GOOGL as Address, fee: 10000, tickSpacing: 200 },
 };
+// The trusted, mint-proven baseline. Kept SEPARATE from the qualifier so these
+// five are always deployable even before the qualifier's cache has warmed, and
+// so any dynamically-qualified pool is strictly additive to (never replaces) it.
+export const LP_BASELINE_SYMBOLS = Object.keys(LP_POOLS);
 
 const pmAbi = [parseAbiItem("function modifyLiquidities(bytes unlockData, uint256 deadline) payable")];
 const erc20Abi = [
@@ -59,8 +64,17 @@ const permit2Abi = [
 ];
 
 function poolKeyOf(symbol: string) {
-  const p = LP_POOLS[symbol];
-  if (!p) throw new Error(`no LP pool config for ${symbol}`);
+  // Trusted baseline first; then any pool the qualifier has vetted (depth +
+  // fee-score + round-trip receive/exit sim). The qualified set is read from a
+  // warm cache — if it's cold, we simply fall through to the baseline, never to
+  // an unvetted pool. A dynamically-resolved pool that somehow can't be minted
+  // still fails safe: the mint reverts and no capital moves.
+  let p: { token: Address; fee: number; tickSpacing: number } | undefined = LP_POOLS[symbol];
+  if (!p) {
+    const q = cachedQualified().find((x) => x.symbol === symbol);
+    if (q) p = { token: q.token, fee: q.fee, tickSpacing: q.tickSpacing };
+  }
+  if (!p) throw new Error(`no LP pool config for ${symbol} (not in trusted baseline, not qualified)`);
   const [currency0, currency1] = p.token.toLowerCase() < USDG.toLowerCase() ? [p.token, USDG] : [USDG, p.token];
   return { currency0, currency1, fee: p.fee, tickSpacing: p.tickSpacing, hooks: NATIVE, token: p.token };
 }

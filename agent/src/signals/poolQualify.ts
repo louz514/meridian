@@ -18,6 +18,17 @@ const MULTICALL3: Address = "0xca11bde05977b3631167028862be2a173976ca11";
 const NATIVE: Address = "0x0000000000000000000000000000000000000000";
 const Q96 = 2 ** 96;
 
+// Tokens with a KNOWN on-chain DEPLOY failure our sims can't clear. The round-
+// trip gate proves SWAPS (receive + exit); it does NOT exercise the MINT path.
+// SPCX's real mint reverted (0x70a08…) — a restriction on the position path a
+// swap sim can't see, so a passing round trip is not evidence the mint is clear.
+// Quarantine keeps such tokens out of the auto-deployable set until a REAL mint
+// confirms them (then delete the entry). This is a denylist of proven-risky
+// tokens, not a hardcoded allowlist — everything else still qualifies dynamically.
+const QUARANTINE = new Set<string>(
+  ["0x4a0e65a3eccec6dbe60ae065f2e7bb85fae35eea" /* SPCX (SpaceX) — mint reverted 2026-07-16 */].map((a) => a.toLowerCase()),
+);
+
 const MIN_DEPTH_USD = Number(process.env.LP_QUALIFY_MIN_DEPTH_USD ?? 2000);
 const QUALIFY_TTL_MS = Number(process.env.LP_QUALIFY_TTL_MS ?? 30 * 60_000);
 // Transfer restrictions are static, so a holdability result is cached long.
@@ -49,11 +60,20 @@ function depthUsd(L: number, sqrtP: number, usdgIs0: boolean): number {
 const holdCache = new Map<string, { ok: boolean; at: number }>();
 
 /**
- * Can our wallet receive `token`? Simulates ETH -> USDG -> token routed through
- * the real pools, with a state override crediting the wallet ETH so the check
- * is independent of live balances/approvals. A revert means the token can't be
- * received (transfer restriction) or the pool can't fill — either way, not safe
- * to LP. Cached (restrictions don't change).
+ * Can our wallet safely LP `token` — receive it AND get back out? Simulates a
+ * full ROUND TRIP, ETH -> USDG -> token -> USDG, routed through the real pools,
+ * with a state override crediting the wallet ETH so the check is independent of
+ * live balances/approvals. The middle hop proves we can RECEIVE the token (the
+ * SPCX transfer-restriction lesson); the last hop proves we can SELL it back —
+ * catching "roach motel" tokens you can buy but never exit, which is the trap a
+ * failed mint is really a symptom of. Either leg reverting = not safe to LP.
+ *
+ * Why a round trip and not a mint-sim: a faithful two-sided mint-sim is circular
+ * (it needs the stock token already in hand — the very thing acquisition gates),
+ * and a one-sided USDG mint never touches the stock token, so it can't see a
+ * restriction. The round trip tests the real receive+exit risk with swap infra
+ * we already trust. The two-sided mint itself is verified fail-safe at the first
+ * small deploy (a revert there moves no funds). Cached (restrictions don't change).
  */
 export async function checkHoldable(token: Address, fee: number, tickSpacing: number): Promise<boolean> {
   const key = token.toLowerCase();
@@ -64,7 +84,8 @@ export async function checkHoldable(token: Address, fee: number, tickSpacing: nu
   if (!house) return false; // no wallet configured — can't verify, fail closed
   const route: RouteHop[] = [
     { outputCurrency: USDG, fee: 500, tickSpacing: 10 }, // ETH -> USDG (bridge pool)
-    { outputCurrency: token, fee, tickSpacing },          // USDG -> token (target pool)
+    { outputCurrency: token, fee, tickSpacing },          // USDG -> token (RECEIVE)
+    { outputCurrency: USDG, fee, tickSpacing },           // token -> USDG (EXIT)
   ];
   const swap = buildSwapExactInCalldata({ currencyIn: NATIVE, route, amountIn: 1_000_000_000_000_000n /* 0.001 ETH */, amountOutMinimum: 0n, recipient: house });
   let ok = false;
@@ -114,6 +135,7 @@ export async function qualifyDeployablePools(): Promise<DeployablePool[]> {
 
   const deep: DeployablePool[] = [];
   candidates.forEach((c, i) => {
+    if (QUARANTINE.has(c.token.toLowerCase())) return; // proven-risky mint path — needs real confirmation
     const liq = results[2 * i];
     const slot = results[2 * i + 1];
     const L = liq.status === "success" ? Number(liq.result) : 0;
@@ -137,4 +159,15 @@ export async function qualifyDeployablePools(): Promise<DeployablePool[]> {
 export async function deployablePoolFor(symbol: string): Promise<DeployablePool | null> {
   const pools = await qualifyDeployablePools();
   return pools.find((p) => p.symbol === symbol) ?? null;
+}
+
+/**
+ * The last qualified set, synchronously — for the deployment path (poolKeyOf),
+ * which is sync and can't await a fresh scan. Empty until qualifyDeployablePools
+ * has run at least once (the allocator warms it on its cadence). A cold cache
+ * therefore falls back to the hardcoded trusted baseline, never to an unvetted
+ * pool. Fail-safe by construction.
+ */
+export function cachedQualified(): DeployablePool[] {
+  return cache?.pools ?? [];
 }

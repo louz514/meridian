@@ -10,9 +10,12 @@ import { keccak256, encodeAbiParameters, parseAbiParameters, parseAbiItem, type 
 import { appendLedger } from "./ledger.js";
 import { getPublicClient } from "./venues/signer.js";
 import { lpScores } from "./signals/lpScore.js";
-import { openPositions } from "./venues/lpPositions.js";
+import { qualifyDeployablePools } from "./signals/poolQualify.js";
+import { openPositions, LP_BASELINE_SYMBOLS } from "./venues/lpPositions.js";
 import { poolCandidates, poolFeePct } from "./venues/stockPools.js";
 import { dataPath } from "./dataDir.js";
+
+const BASELINE_SYMBOLS = new Set(LP_BASELINE_SYMBOLS);
 
 const SV: Address = "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b";
 const MULTICALL3: Address = "0xca11bde05977b3631167028862be2a173976ca11"; // deployed on Robinhood Chain, but not in the viem chain object
@@ -164,6 +167,16 @@ export function startLpAllocator(): NodeJS.Timeout {
       console.error(`[lpAllocator] best: ${scan.best?.pool ?? "none"} ($${scan.best?.expectedNetPerDayUsd.toFixed(2)}/day) — ${scan.recommendation}`);
     } catch (err) {
       console.error(`[lpAllocator] scan failed: ${err instanceof Error ? err.message.slice(0, 120) : err}`);
+    }
+    // Warm the deployable-pool cache the deployment path reads synchronously, so
+    // the LP set is dynamic (new/deepened pools qualify in) without living in a
+    // hardcoded list. Read-only; qualification gates deployment, moves no capital.
+    try {
+      const q = await qualifyDeployablePools();
+      const extra = q.filter((p) => !BASELINE_SYMBOLS.has(p.symbol)).map((p) => `${p.symbol}($${Math.round(p.depthUsd / 1000)}k)`);
+      console.error(`[lpAllocator] deployable: ${q.length} pools qualify${extra.length ? ` — beyond baseline: ${extra.join(", ")}` : ""}`);
+    } catch (err) {
+      console.error(`[lpAllocator] qualify failed: ${err instanceof Error ? err.message.slice(0, 120) : err}`);
     }
   };
   const isMarketHours = () => {
