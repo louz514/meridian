@@ -18,7 +18,6 @@ import { runConsoleCommand } from "./console.js";
 import { GatewayClient } from "@openhermit/sdk";
 import { issueChallenge, linkAccount, accountData, mintSession, verifySession } from "./accounts.js";
 import { ensureUserAgent, messageUserAgent, userAgentHistory, streamUserAgent, sanitizeChunk, setUserAgentSettings, agentDisplayName, userAgentSettings } from "./deploy/myAgent.js";
-import { checkMerdGate, gateMessage, MerdGateError } from "./deploy/tokenGate.js";
 import { vaultStatus, buildVaultSetup, buildVaultRevoke } from "./custody/vault.js";
 import { provisionResearchFleet, triggerResearchRun } from "./research/orchestration.js";
 import { rateLimitOk, tryBeginTurn, endTurn, acquireSlot, releaseSlot, chatLoad } from "./chatLimits.js";
@@ -543,20 +542,6 @@ function chatGuardSync(address: string): { status: number; error: string } | nul
   return null;
 }
 
-// Public read: does this wallet clear the $MERD gate to run an agent? Balances
-// are public, so no auth — the creation UI polls this to show a locked state
-// without triggering provisioning. Returns { enabled:false } when the gate is
-// unconfigured (pre-token-launch), so the UI just behaves normally.
-app.get("/api/my-agent/gate", async (req: Request, res: Response) => {
-  setWalletCors(res);
-  const address = typeof req.query.address === "string" ? req.query.address : "";
-  try {
-    res.json(await checkMerdGate(address));
-  } catch (err) {
-    res.status(502).json({ enabled: true, ok: false, error: "could not verify your $MERD balance", retryable: true });
-  }
-});
-
 app.options("/api/my-agent/ensure", (_req: Request, res: Response) => { setWalletCors(res); res.sendStatus(204); });
 app.post("/api/my-agent/ensure", async (req: Request, res: Response) => {
   setWalletCors(res);
@@ -566,7 +551,6 @@ app.post("/api/my-agent/ensure", async (req: Request, res: Response) => {
     const result = await ensureUserAgent(address);
     res.json({ ok: true, ...result, name: agentDisplayName(address), settings: userAgentSettings(address) });
   } catch (err) {
-    if (err instanceof MerdGateError) { res.status(403).json({ ok: false, error: err.message, gate: err.gate }); return; }
     console.error("[my-agent] ensure failed:", err instanceof Error ? err.message : err);
     res.status(502).json({ ok: false, error: "could not reach the agent runtime — try again shortly" });
   }
@@ -600,8 +584,6 @@ app.post("/api/my-agent/message", async (req: Request, res: Response) => {
   const text = typeof (req.body ?? {}).text === "string" ? (req.body.text as string).trim() : "";
   if (!text) { res.status(400).json({ ok: false, error: "empty message" }); return; }
   if (text.length > 2000) { res.status(400).json({ ok: false, error: "message too long (2000 char max)" }); return; }
-  const gate = await checkMerdGate(address);
-  if (gate.enabled && !gate.ok) { res.status(403).json({ ok: false, error: gateMessage(gate), gate }); return; }
   const guard = chatGuardSync(address);
   if (guard) { res.status(guard.status).json({ ok: false, error: guard.error }); return; }
   const slot = await acquireSlot();
@@ -629,10 +611,8 @@ app.post("/api/my-agent/stream", async (req: Request, res: Response) => {
   if (!text) { res.status(400).json({ ok: false, error: "empty message" }); return; }
   if (text.length > 2000) { res.status(400).json({ ok: false, error: "message too long (2000 char max)" }); return; }
 
-  // Guards BEFORE the SSE headers, so an overflow — or a failed $MERD gate —
-  // gets a clean JSON error rather than a half-open stream.
-  const gate = await checkMerdGate(address);
-  if (gate.enabled && !gate.ok) { res.status(403).json({ ok: false, error: gateMessage(gate), gate }); return; }
+  // Guards BEFORE the SSE headers, so an overflow gets a clean JSON error
+  // rather than a half-open stream.
   const guard = chatGuardSync(address);
   if (guard) { res.status(guard.status).json({ ok: false, error: guard.error }); return; }
   const slot = await acquireSlot();
@@ -775,9 +755,6 @@ app.post("/api/earn/scout", async (req: Request, res: Response) => {
   setWalletCors(res);
   const address = requireWallet(req, res);
   if (!address) return;
-  // Scout drives the wallet's own agent, so the $MERD gate applies here too.
-  const gate = await checkMerdGate(address);
-  if (gate.enabled && !gate.ok) { res.status(403).json({ ok: false, error: gateMessage(gate), gate }); return; }
   // Bounty caps BEFORE the chat guards — a capped wallet shouldn't spend a turn.
   const allowed = scoutAllowed(address);
   if (!allowed.ok) { res.status(429).json({ ok: false, error: allowed.reason }); return; }
