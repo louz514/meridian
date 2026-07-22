@@ -22,9 +22,12 @@ are append-only files in the workdir — mount a volume or they reset on deploy.
 
 ## After it's up
 
-1. Point DNS: `api.meridian402.xyz` -> the host.
-2. Rebuild the frontend with `VITE_MERIDIAN_API_URL=https://api.meridian402.xyz`
-   and redeploy (see the meridian402 Vercel project).
+1. The API is live on Railway at `https://meridian402-api-production.up.railway.app`;
+   the frontend's `VITE_MERIDIAN_API_URL` already points there.
+2. OPTIONAL — for a clean API domain: add `api.meridian402.xyz` as a custom domain
+   on the Railway service, point its DNS at Railway, then set BOTH
+   `VITE_MERIDIAN_API_URL` and `MERIDIAN_PUBLIC_MCP_URL` to it and redeploy.
+   (Not set up today — the bare `api.meridian402.xyz` host is a dead Vercel record.)
 3. Public surface: GET feeds + POST /api/reserve-profile + /api/fleet/export
    are open by design; /mcp and /api/index-trade require the bearer token.
 

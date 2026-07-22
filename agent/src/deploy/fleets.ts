@@ -160,8 +160,9 @@ export async function provisionFleetSpec(spec: FleetSpec): Promise<"provisioned"
 export function exportBundle(spec: FleetSpec): Record<string, string> {
   const plans = planFleet(spec);
   // publicMcpUrl can be configured empty in dev; an exported bundle must
-  // always point somewhere real, so fall back to the production endpoint.
-  const mcpUrl = config.publicMcpUrl || "https://api.meridian402.xyz/mcp";
+  // always point somewhere real, so fall back to the LIVE production endpoint.
+  // (Set MERIDIAN_PUBLIC_MCP_URL in prod to override — e.g. a custom API domain.)
+  const mcpUrl = config.publicMcpUrl || "https://meridian402-api-production.up.railway.app/mcp";
 
   const provision = `// Provision Meridian fleet ${spec.fleetId} on YOUR OpenHermit gateway.
 // Usage: OPENHERMIT_GATEWAY_URL=... GATEWAY_ADMIN_TOKEN=... node provision.mjs
