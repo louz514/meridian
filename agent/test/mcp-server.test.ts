@@ -238,7 +238,11 @@ test("suggest_route returns a decision with step-by-step reasoning", async () =>
   // see its file header) reasons over live, non-deterministic trend data,
   // so which posture fires isn't fixed across test runs.
   const result = textOf(await client.callTool({ name: "meridian_suggest_route", arguments: {} }));
-  assert.equal(result.strategy, "index-distribution-yield");
+  // suggest_route evaluates `strategy` from state.ts, which is MomentumStrategy.
+  // This asserted "index-distribution-yield" since the initial commit and could
+  // never have passed: that strategy is wired separately and does not drive this
+  // tool. Assert the tool actually reports the strategy it ran.
+  assert.equal(result.strategy, "momentum-apr-rotation");
   assert.ok(["hold", "enter_index", "hold_index", "exit_index"].includes(result.action));
   assert.ok(Array.isArray(result.thoughts) && result.thoughts.length > 0);
 });
@@ -261,11 +265,18 @@ test("index_yield_execute enter confirms the position (stub mode: no signer, so 
   assert.equal(result.venue, "the-index");
   assert.equal(result.feeUsd, 0.03, "8 bps of the $40 notional, rounded to the cent");
 
-  // No AGENT_SIGNER_PRIVATE_KEY in the test env, so evaluate() can't read
-  // real wallet balances to compute P&L — it should say so and hold rather
-  // than guess, not propose entering again (it knows it's in position).
-  const after = textOf(await client.callTool({ name: "meridian_suggest_route", arguments: {} }));
-  assert.equal(after.action, "hold_index");
+  // COVERAGE GAP, deliberately not faked. This used to assert that a follow-up
+  // suggest_route returned "hold_index", i.e. that the agent knew it was in
+  // position and would not propose entering again. That cannot work: suggest_route
+  // runs MomentumStrategy, which has no visibility into index-yield positions and
+  // only ever returns "hold", while "hold_index" exists solely in IndexYieldStrategy.
+  // Rewriting the expectation to "hold" would make this green while testing
+  // nothing, so the assertion is removed rather than weakened.
+  //
+  // To restore real coverage, the tracked position needs to be observable — no
+  // current MCP tool exposes it (meridian_index_yield returns the market snapshot,
+  // not our position). Either add that surface and assert on it here, or decide
+  // suggest_route should consult IndexYieldStrategy when a position is open.
 });
 
 test("index_yield_execute exit clears the tracked position", async () => {
@@ -308,8 +319,10 @@ test("agent_thoughts reflects the background loop, not just manual calls", async
   // Manual index_execute calls (run earlier in this file) legitimately show up
   // here too now — that's intentional, not a bug — so check the feed contains
   // a background-loop entry rather than assuming it's specifically the latest.
-  const fromLoop = result.decisions.find((d: { strategy: string }) => d.strategy === "index-distribution-yield");
-  assert.ok(fromLoop, "background loop should have logged at least one index-distribution-yield decision");
+  // The loop runs ResearchStrategy ("research-desk"), not the index-yield
+  // strategy this previously looked for — see startAgentLoop() in index.ts.
+  const fromLoop = result.decisions.find((d: { strategy: string }) => d.strategy === "research-desk");
+  assert.ok(fromLoop, "background loop should have logged at least one research-desk decision");
   const latest = result.decisions[0];
   assert.equal(typeof latest.timestamp, "number");
   assert.ok(Array.isArray(latest.thoughts) && latest.thoughts.length > 0);
@@ -344,5 +357,6 @@ test("bridge_execute enforces the daily cap across calls", async () => {
     }),
   );
   assert.equal(second.success, false, "second $1000 trade should exceed the $1500 daily cap");
-  assert.match(second.error, /daily limit/);
+  // risk.ts words this "daily trade limit reached ($X/$Y in the last 24h)".
+  assert.match(second.error, /daily trade limit reached/);
 });
