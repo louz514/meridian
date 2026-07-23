@@ -33,3 +33,6 @@ agent/com.meridian.*.plist
 # Frontend lives in its own private repo (meridian-frontend)
 frontend/
 agent/merd-memory/
+
+# Merd's X mention cursor — runtime state, per-machine
+agent/merd-engage-state.json

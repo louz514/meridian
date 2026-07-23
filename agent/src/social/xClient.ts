@@ -77,6 +77,89 @@ export async function postTweet(text: string): Promise<PostResult> {
   }
 }
 
+export interface Mention {
+  id: string;
+  text: string;
+  authorId: string;
+  authorHandle: string;
+  createdAt: string;
+}
+
+/**
+ * Fetch mentions newer than `sinceId` (exclusive), oldest-first. Read-only —
+ * used by the engagement job to find things Merd might reply to.
+ */
+export async function getMentions(sinceId?: string): Promise<Mention[]> {
+  const cfg = readConfig();
+  if (!cfg) return [];
+  try {
+    const client = new TwitterApi({
+      appKey: cfg.appKey,
+      appSecret: cfg.appSecret,
+      accessToken: cfg.accessToken,
+      accessSecret: cfg.accessSecret,
+    });
+    const me = await client.v2.me();
+    const page = await client.v2.userMentionTimeline(me.data.id, {
+      max_results: 30,
+      since_id: sinceId,
+      "tweet.fields": ["author_id", "created_at", "text"],
+      expansions: ["author_id"],
+    });
+    const users: Record<string, string> = {};
+    for (const u of page.includes?.users ?? []) users[u.id] = u.username;
+    const list = (page.data?.data ?? []).filter((t) => t.author_id !== me.data.id);
+    return list
+      .map((t) => ({
+        id: t.id,
+        text: t.text,
+        authorId: t.author_id ?? "",
+        authorHandle: users[t.author_id ?? ""] ?? "unknown",
+        createdAt: t.created_at ?? "",
+      }))
+      .reverse(); // oldest-first
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Reply to a specific tweet. Same draft-first gate as postTweet: only
+ * actually posts when X_LIVE === "true", otherwise logs what would have
+ * been said and returns without posting.
+ */
+export async function postReply(text: string, inReplyToId: string): Promise<PostResult> {
+  const trimmed = text.trim();
+  const MAX = Number(process.env.X_MAX_TWEET_CHARS ?? 500);
+  if (!trimmed || trimmed.length > MAX) {
+    return { posted: false, reason: `bad length (${trimmed.length}/${MAX})`, text: trimmed };
+  }
+  const cfg = readConfig();
+  if (!cfg) {
+    appendLedger("x-replies.jsonl", { at: Date.now(), mode: "unconfigured", posted: false, inReplyToId, text: trimmed });
+    return { posted: false, reason: "X keys not configured", text: trimmed };
+  }
+  if (!xLive()) {
+    appendLedger("x-replies.jsonl", { at: Date.now(), mode: "draft", posted: false, inReplyToId, text: trimmed });
+    return { posted: false, reason: "draft mode (set X_LIVE=true to post)", text: trimmed };
+  }
+  try {
+    const client = new TwitterApi({
+      appKey: cfg.appKey,
+      appSecret: cfg.appSecret,
+      accessToken: cfg.accessToken,
+      accessSecret: cfg.accessSecret,
+    });
+    const res = await client.v2.reply(trimmed, inReplyToId);
+    appendLedger("x-replies.jsonl", { at: Date.now(), mode: "live", posted: true, id: res.data.id, inReplyToId, text: trimmed });
+    return { posted: true, id: res.data.id, text: trimmed };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    appendLedger("x-replies.jsonl", { at: Date.now(), mode: "live", posted: false, error: msg.slice(0, 200), inReplyToId, text: trimmed });
+    return { posted: false, reason: `reply failed: ${msg.slice(0, 160)}`, text: trimmed };
+  }
+}
+
 /** Verify the configured credentials can authenticate + read the account (no post). */
 export async function verifyX(): Promise<{ ok: boolean; handle?: string; error?: string }> {
   const cfg = readConfig();
