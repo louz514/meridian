@@ -1,5 +1,5 @@
 import express, { type Request, type Response, type NextFunction } from "express";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { dataPath } from "./dataDir.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -142,10 +142,33 @@ app.get("/api/ops", (req: Request, res: Response) => {
 // so the transport must persist between requests.
 const transports = new Map<string, StreamableHTTPServerTransport>();
 
+// Constant-time bearer check. Token comparison with `===` leaks length and
+// prefix through timing; this matches the timingSafeEqual pattern already used
+// for session/nonce verification in accounts.ts.
+function bearerMatches(req: Request, expected: string): boolean {
+  if (!expected) return false;
+  const a = Buffer.from(req.header("authorization") ?? "");
+  const b = Buffer.from(`Bearer ${expected}`);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+// Loopback-only fallback, used by every gate when its token is unconfigured so
+// that a deployment which forgets the token is unreachable rather than open.
+// Safe behind Railway because `trust proxy` is 1, so req.ip is the real client
+// and cannot be spoofed via X-Forwarded-For.
+function isLoopback(req: Request): boolean {
+  const ip = req.ip ?? "";
+  return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+}
+
+// Shared-bearer gate for operator write tools. Fails CLOSED: with no token
+// configured it answers loopback only, matching tradeAuthorized/executeAuthorized.
+// It previously returned true for everyone when the token was blank, which made
+// a prod deploy that forgot MERIDIAN_MCP_TOKEN accept anonymous research writes
+// into the pipeline the strategy consumes.
 function authorized(req: Request): boolean {
-  if (!config.mcpToken) return true; // open in local dev when no token is set
-  const header = req.header("authorization") ?? "";
-  return header === `Bearer ${config.mcpToken}`;
+  if (config.mcpToken) return bearerMatches(req, config.mcpToken);
+  return isLoopback(req);
 }
 
 // FUND-MOVING tools: they sign the house wallet. Gated by the SEPARATE execute
@@ -190,18 +213,16 @@ function mcpRequestAllowed(req: Request): boolean {
 // network by default — a public deployment that forgets the token must fail
 // closed, not fall open.
 function tradeAuthorized(req: Request): boolean {
-  if (config.mcpToken) return req.header("authorization") === `Bearer ${config.mcpToken}`;
-  const ip = req.ip ?? "";
-  return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+  if (config.mcpToken) return bearerMatches(req, config.mcpToken);
+  return isLoopback(req);
 }
 
 // Fund-moving MCP tools use this stricter gate: the dedicated execute token,
 // which lives in NO gateway registration. Fails closed — with no token
 // configured, only loopback may execute, never the open network.
 function executeAuthorized(req: Request): boolean {
-  if (config.executeToken) return req.header("authorization") === `Bearer ${config.executeToken}`;
-  const ip = req.ip ?? "";
-  return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+  if (config.executeToken) return bearerMatches(req, config.executeToken);
+  return isLoopback(req);
 }
 
 const paymentGate = new PaymentGate(config.treasuryAddress, config.x402FacilitatorUrl);
