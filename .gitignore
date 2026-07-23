@@ -36,3 +36,6 @@ agent/merd-memory/
 
 # Merd's X mention cursor — runtime state, per-machine
 agent/merd-engage-state.json
+
+# Merd's outreach cursor — runtime state, per-machine
+agent/merd-outreach-state.json

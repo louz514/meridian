@@ -90,8 +90,22 @@ export async function lpScores(windowDays = 2.5): Promise<LpScoreReport> {
   const wanted = new Map(active.map((p) => [idFor(p[1], p[2], p[3]).toLowerCase(), p[0]]));
   const swaps = new Map<string, { t: number; px: number; usd: number; dir: number }[]>(active.map((p) => [p[0], []]));
 
+  // The RPC caps by RESULT COUNT, not block range: "logs matched by query
+  // exceeds limit of 10000". At the observed ~1.8 swaps/block that ceiling
+  // arrives around 5,500 blocks, so a floor of 25,000 gave up while still far
+  // too wide and the whole scan threw. Halve down to something genuinely small
+  // before admitting defeat.
+  // Blocks are ~0.1s here, so a 2.5-day window is ~2.15M blocks. Step size is
+  // therefore the whole ballgame: 5,000 is ~431 calls, 250 is ~8,600 and takes
+  // over ten minutes. Halving alone was not enough, because one dense stretch
+  // pinned the step at the floor for the entire remaining scan. So it grows back
+  // after a run of successes and settles just under whatever the RPC allows.
   let from = fromBlock;
-  let step = 200_000n;
+  let step = 4_000n;
+  const MIN_STEP = 250n;
+  const MAX_STEP = 8_000n;
+  let streak = 0;
+  let lastErr = "";
   while (from <= head) {
     const to = from + step - 1n > head ? head : from + step - 1n;
     try {
@@ -112,12 +126,23 @@ export async function lpScores(windowDays = 2.5): Promise<LpScoreReport> {
         swaps.get(name)!.push({ t: blockTs(l.blockNumber), px, usd: Math.abs(Number(usdgAmt)) / 1e6, dir: 0 });
       }
       from = to + 1n;
-    } catch {
-      if (step > 25_000n) {
+      if (++streak >= 3 && step < MAX_STEP) {
+        step = step * 3n / 2n > MAX_STEP ? MAX_STEP : step * 3n / 2n;
+        streak = 0;
+      }
+    } catch (err) {
+      streak = 0;
+      // Keep the RPC's own words. A bare catch here is why this failed silently
+      // for so long: poolQualify swallows the throw, so every pool reported
+      // netPerDayUsd 0 and the allocator went blind with nothing in the logs.
+      lastErr = String((err as { details?: string; shortMessage?: string; message?: string })?.details
+        ?? (err as { shortMessage?: string })?.shortMessage
+        ?? (err as Error)?.message ?? err).slice(0, 200);
+      if (step > MIN_STEP) {
         step /= 2n;
         continue;
       }
-      throw new Error("swap-event scan failing even at small ranges");
+      throw new Error(`swap-event scan failing even at ${MIN_STEP}-block ranges: ${lastErr}`);
     }
   }
 
