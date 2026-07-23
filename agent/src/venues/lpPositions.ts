@@ -260,13 +260,41 @@ export interface LpPositionValue extends LpPositionRecord {
   rangePct: number;
 }
 
+/**
+ * Live liquidity for a position, read from CHAIN rather than the registry file.
+ *
+ * The stored `liquidity` is only correct at mint time. A file cannot know a
+ * position was later emptied, so it must never be the source of truth for value:
+ * position 102556 sat in the registry claiming 730498034632674 while the chain
+ * said 0, and the wallet was published at $157 while holding $0.82.
+ */
+async function onChainLiquidity(p: LpPositionRecord): Promise<bigint> {
+  const k = poolKeyOf(p.symbol);
+  const poolId = keccak256(
+    encodeAbiParameters(parseAbiParameters("address, address, uint24, int24, address"), [k.currency0, k.currency1, k.fee, k.tickSpacing, NATIVE]),
+  );
+  const salt = `0x${BigInt(p.tokenId).toString(16).padStart(64, "0")}` as Hex;
+  const posKey = keccak256(encodePacked(["address", "int24", "int24", "bytes32"], [POSITION_MANAGER, p.tickLower, p.tickUpper, salt]));
+  const [liq] = await getPublicClient().readContract({
+    address: STATE_VIEW,
+    abi: [parseAbiItem("function getPositionInfo(bytes32,bytes32) view returns (uint128,uint256,uint256)")],
+    functionName: "getPositionInfo",
+    args: [poolId, posKey],
+  });
+  return liq;
+}
+
 /** Open positions marked to current pool state: what the range holds right now and its USD value (excl. uncollected fees). */
 export async function lpPositionsWithValue(): Promise<LpPositionValue[]> {
   const out: LpPositionValue[] = [];
   for (const p of openPositions()) {
     const k = poolKeyOf(p.symbol);
     const { sqrtP, tick } = await slot0(p.symbol);
-    const L = Number(p.liquidity);
+    // Chain is authoritative. A position the registry still calls open but which
+    // holds no liquidity has been emptied; counting it inflates the track record.
+    const liveLiquidity = await onChainLiquidity(p);
+    if (liveLiquidity === 0n) continue;
+    const L = Number(liveLiquidity);
     const sA = sqrtAtTick(p.tickLower);
     const sB = sqrtAtTick(p.tickUpper);
     const sC = Math.min(Math.max(sqrtP, sA), sB);

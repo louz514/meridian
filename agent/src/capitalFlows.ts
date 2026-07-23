@@ -15,13 +15,26 @@
 const EXPLORER_API = process.env.MERIDIAN_EXPLORER_API ?? "https://robinhoodchain.blockscout.com/api";
 const USDG = "0x5fc5360d0400a0fd4f2af552add042d716f1d168";
 
-/** Protocol contracts: value moving to or from these is trading, not a flow. */
-const PROTOCOL = new Set([
-  "0x8366a39cc670b4001a1121b8f6a443a643e40951", // PoolManager
-  "0x8876789976decbfcbbbe364623c63652db8c0904", // UniversalRouter
-  "0x000000000022d473030f116ddee9f6b43ac78ba3", // Permit2
-  "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b", // StateView
-]);
+// An allowlist of protocol addresses does not work: trading routes USDG through
+// more contracts than any hand-maintained list knows, so ordinary trade legs got
+// misread as withdrawals. Prod and local disagreed ($153 vs -$27 contributed)
+// purely from which contracts each happened to see.
+//
+// The real distinction is simpler and complete: a DEPOSIT comes from a person's
+// wallet, a TRADE goes through a contract. So classify by whether the
+// counterparty has code. Cached, because an address never stops being a contract.
+const isContractCache = new Map<string, boolean>();
+
+async function isContract(addr: string): Promise<boolean> {
+  const a = addr.toLowerCase();
+  const hit = isContractCache.get(a);
+  if (hit !== undefined) return hit;
+  const { getPublicClient } = await import("./venues/signer.js");
+  const code = await getPublicClient().getCode({ address: a as `0x${string}` });
+  const has = !!code && code !== "0x";
+  isContractCache.set(a, has);
+  return has;
+}
 
 export interface CapitalFlows {
   ethInUsd: number;
@@ -76,7 +89,8 @@ export async function capitalFlows(wallet: string, ethUsd: number): Promise<Capi
       if (String(t.contractAddress ?? "").toLowerCase() !== USDG) continue;
       const incoming = String(t.to ?? "").toLowerCase() === w;
       const counterparty = String((incoming ? t.from : t.to) ?? "").toLowerCase();
-      if (PROTOCOL.has(counterparty)) continue; // trading leg, not a capital flow
+      if (!counterparty || counterparty === w) continue;
+      if (await isContract(counterparty)) continue; // routed through a contract: trading, not a capital flow
       const usd = Number(t.value ?? 0) / 1e6;
       if (incoming) out.usdgInUsd += usd;
       else out.usdgOutUsd += usd;
