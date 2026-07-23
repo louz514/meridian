@@ -51,7 +51,7 @@ ${recent.length ? `You recently posted these, so do NOT repeat them or their the
 
 Decide what to do right now. Is there something actually worth saying? A little discovery, a thought, an opinion, something funny you noticed, a real observation about the chain. Your call. Keep the feed alive and engaging, lean toward posting when you have a real thought, and be funny when it is actually funny, do not force it.
 
-If you post: reply with ONLY the tweet. Write like a real, curious, sharp person sharing what is on their mind, in complete natural sentences. One or two sentences, and it MUST come in under 280 characters, so keep it tight, aim for roughly 180 to 240. A genuine point of view, warmth, dry wit or real humor when it fits. It must feel like a real person wrote it, so real that nobody would guess an agent did. Not terse alpha-bot fragments, not corporate, just a human who finds this stuff genuinely interesting. Ground any numbers in the data above. No hype, no hashtags, no em dashes, no quotation marks, no reciting your own values.
+If you post: reply with ONLY the tweet. Write like a real, curious, sharp person sharing what is on their mind, in complete natural sentences. One to three natural sentences. Keep it punchy and readable, do not ramble into a wall of text. A genuine point of view, warmth, dry wit or real humor when it fits. It must feel like a real person wrote it, so real that nobody would guess an agent did. Not terse alpha-bot fragments, not corporate, just a human who finds this stuff genuinely interesting. Ground any numbers in the data above. No hype, no hashtags, no em dashes, no quotation marks, no reciting your own values.
 
 If nothing is genuinely worth saying right now: reply with exactly PASS.`;
 
@@ -67,7 +67,7 @@ try { appendFileSync(dataPath("merd-decisions.jsonl"), JSON.stringify(logLine) +
 
 if (/^pass\b/i.test(tweet) || tweet.length < 15) { console.log("Merd chose to hold this cycle."); process.exit(0); }
 console.log(`Merd decided to post (${tweet.length} chars):\n${tweet}\n`);
-if (tweet.length > 280) { console.log("SKIP: too long"); process.exit(1); }
+if (tweet.length > 500) { console.log("SKIP: too long even for premium"); process.exit(1); }
 if (recent.some((r) => r.toLowerCase().slice(0, 40) === tweet.toLowerCase().slice(0, 40))) { console.log("SKIP: too similar to a recent post"); process.exit(0); }
 if (DRY) { console.log("DRY RUN, not posting."); process.exit(0); }
 

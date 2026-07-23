@@ -45,8 +45,11 @@ export interface PostResult {
  */
 export async function postTweet(text: string): Promise<PostResult> {
   const trimmed = text.trim();
-  if (!trimmed || trimmed.length > 280) {
-    return { posted: false, reason: `bad length (${trimmed.length})`, text: trimmed };
+  // @Meridian402 is X Premium, so it can post long-form. Cap generously to allow
+  // Merd's natural 2-3 sentence voice while still blocking runaway walls of text.
+  const MAX = Number(process.env.X_MAX_TWEET_CHARS ?? 500);
+  if (!trimmed || trimmed.length > MAX) {
+    return { posted: false, reason: `bad length (${trimmed.length}/${MAX})`, text: trimmed };
   }
   const cfg = readConfig();
   if (!cfg) {
