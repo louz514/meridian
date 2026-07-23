@@ -41,20 +41,55 @@ async function waitForHealth(timeoutMs = 8000) {
   throw new Error("server did not become healthy in time");
 }
 
+/**
+ * HERMETIC child environment. Deliberately does NOT spread process.env: doing so
+ * inherited whatever the operator's shell happened to hold, which gave the suite
+ * two failure modes and no correct one. With no .env loaded the server refused to
+ * boot; with the real .env loaded, MERIDIAN_MCP_TOKEN switched on the bearer gate
+ * (submit_research 401s, and the universe assertions then fail on an empty
+ * universe), X402_FACILITATOR_URL left payment stub mode so the "test-proof"
+ * header below stopped being accepted, and AGENT_SIGNER_PRIVATE_KEY pushed the
+ * execute tools onto the real signing path the stub-mode assertions do not expect.
+ *
+ * Everything the server needs is therefore stated here, and every gate the suite
+ * must not hit is explicitly blanked rather than left to chance. Only PATH and
+ * HOME come from the parent, because npx needs them.
+ */
+const childEnv: NodeJS.ProcessEnv = {
+  PATH: process.env.PATH,
+  HOME: process.env.HOME,
+
+  MERIDIAN_MCP_PORT: String(PORT),
+  MERIDIAN_UNIVERSE_PATH: universePath,
+  MERIDIAN_POSITION_STATE_PATH: positionStatePath,
+  // Keeps the money-adjacent ledgers (x402 replay, reservations, accounts) in
+  // the scratch dir. Unset, DATA_DIR falls back to the repo and the suite writes
+  // into real state — the same class of bug that clobbered position-state.json.
+  MERIDIAN_DATA_DIR: scratchDir,
+
+  // Satisfies module-load requirements. Never dialed: the loggers that would use
+  // these only start when their MERIDIAN_RUN_*_LOGGER flag is set, which it is not.
+  ROBINHOOD_RPC_URL: "http://127.0.0.1:9/unused",
+  SOLANA_RPC_URL: "http://127.0.0.1:9/unused",
+
+  AGENT_MAX_TRADE_USD: "1000",
+  // 2000, not 1500: the index_execute tests spend $300 before the
+  // bridge_execute tests run (one shared RiskLimiter for the whole file),
+  // and the daily-cap test still needs headroom for its own $500 + $1000.
+  AGENT_MAX_DAILY_USD: "2000",
+
+  // Gates the suite must not hit, blanked explicitly.
+  MERIDIAN_MCP_TOKEN: "",
+  MERIDIAN_EXECUTE_TOKEN: "",
+  X402_FACILITATOR_URL: "",
+  AGENT_SIGNER_PRIVATE_KEY: "",
+  AGENT_LIVE_TRADING: "false",
+};
+
 before(async () => {
   child = spawn("npx", ["tsx", "src/index.ts"], {
     cwd: new URL("..", import.meta.url).pathname,
-    env: {
-      ...process.env,
-      MERIDIAN_MCP_PORT: String(PORT),
-      MERIDIAN_UNIVERSE_PATH: universePath,
-      MERIDIAN_POSITION_STATE_PATH: positionStatePath,
-      AGENT_MAX_TRADE_USD: "1000",
-      // 2000, not 1500: the index_execute tests spend $300 before the
-      // bridge_execute tests run (one shared RiskLimiter for the whole file),
-      // and the daily-cap test still needs headroom for its own $500 + $1000.
-      AGENT_MAX_DAILY_USD: "2000",
-    },
+    env: childEnv,
     stdio: "ignore",
   });
   await waitForHealth();
