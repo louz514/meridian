@@ -1,23 +1,23 @@
 #!/bin/bash
-# Snapshot Merd's memory + action logs into the repo so they survive this
-# machine. Self-throttles to ~once a day so the autopilot can call it every run.
+# Snapshot Merd's memory + action logs into his PRIVATE repo so they survive this
+# machine WITHOUT being public. Self-throttles to ~once a day (FORCE=1 overrides).
 export PATH="/usr/local/bin:$PATH"
-REPO=/Users/zach/Downloads/meridian
+AGENT=/Users/zach/Downloads/meridian/agent
+MEM=/Users/zach/meridian-memory   # PRIVATE repo (louz514/meridian-memory)
 STAMP="$HOME/.merd-backup-stamp"
 
-# throttle: skip if a backup ran in the last 20h (unless FORCE=1)
 if [ "$FORCE" != "1" ] && [ -f "$STAMP" ] && [ $(( $(date +%s) - $(cat "$STAMP" 2>/dev/null || echo 0) )) -lt 72000 ]; then
   exit 0
 fi
+[ -d "$MEM/.git" ] || { echo "private memory repo missing at $MEM"; exit 1; }
 
-cd "$REPO/agent" || exit 1
-mkdir -p merd-memory/workspace
-cp -Rf ~/.openhermit/workspaces/merd/. merd-memory/workspace/ 2>/dev/null
-cp -f x-posts.jsonl merd-decisions.jsonl merd-memory/ 2>/dev/null
-cd "$REPO" || exit 1
-git add -f agent/merd-memory >/dev/null 2>&1  # logs are *.jsonl (gitignored), force them into the backup
-if ! git diff --cached --quiet agent/merd-memory; then
-  git commit -q -m "backup: merd memory $(date +%F_%H%M)"
-  git push -q origin main && echo "merd memory backed up + pushed to GitHub"
+mkdir -p "$MEM/workspace"
+cp -Rf ~/.openhermit/workspaces/merd/. "$MEM/workspace/" 2>/dev/null
+cp -f "$AGENT/x-posts.jsonl" "$AGENT/merd-decisions.jsonl" "$MEM/" 2>/dev/null
+cd "$MEM" || exit 1
+git add -A >/dev/null 2>&1
+if ! git diff --cached --quiet; then
+  git commit -q -m "merd memory $(date +%F_%H%M)"
+  git push -q -u origin HEAD 2>/dev/null && echo "merd memory backed up to PRIVATE repo"
 fi
 date +%s > "$STAMP"
