@@ -28,3 +28,4 @@ _volprobe.mjs
 
 # Frontend lives in its own private repo (meridian-frontend)
 frontend/
+agent/merd-memory/
