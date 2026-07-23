@@ -123,6 +123,64 @@ export async function getMentions(sinceId?: string): Promise<Mention[]> {
   }
 }
 
+export interface FoundTweet extends Mention {
+  followers: number;
+  likes: number;
+  replies: number;
+  isReply: boolean;
+}
+
+/**
+ * Recent-search for conversations worth joining. Read-only. Mentions alone are
+ * not enough to be part of a community: a small account gets roughly one a day,
+ * so without this the agent has nothing to engage WITH.
+ *
+ * Returns author follower counts and engagement so callers can filter before
+ * spending a model call, and marks replies so a caller can prefer top-level
+ * posts over jumping into the middle of someone else's thread.
+ */
+export async function searchTweets(query: string, maxResults = 25): Promise<FoundTweet[]> {
+  const cfg = readConfig();
+  if (!cfg) return [];
+  try {
+    const client = new TwitterApi({
+      appKey: cfg.appKey,
+      appSecret: cfg.appSecret,
+      accessToken: cfg.accessToken,
+      accessSecret: cfg.accessSecret,
+    });
+    const me = await client.v2.me();
+    const page = await client.v2.search(query, {
+      max_results: Math.min(100, Math.max(10, maxResults)),
+      "tweet.fields": ["author_id", "created_at", "text", "public_metrics", "referenced_tweets", "lang"],
+      "user.fields": ["username", "public_metrics"],
+      expansions: ["author_id"],
+    });
+    const users: Record<string, { handle: string; followers: number }> = {};
+    for (const u of page.includes?.users ?? []) {
+      users[u.id] = { handle: u.username, followers: u.public_metrics?.followers_count ?? 0 };
+    }
+    return (page.data?.data ?? [])
+      .filter((t) => t.author_id !== me.data.id && (t.lang ?? "en") === "en")
+      .map((t) => {
+        const u = users[t.author_id ?? ""];
+        return {
+          id: t.id,
+          text: t.text,
+          authorId: t.author_id ?? "",
+          authorHandle: u?.handle ?? "unknown",
+          createdAt: t.created_at ?? "",
+          followers: u?.followers ?? 0,
+          likes: t.public_metrics?.like_count ?? 0,
+          replies: t.public_metrics?.reply_count ?? 0,
+          isReply: (t.referenced_tweets ?? []).some((r) => r.type === "replied_to"),
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Reply to a specific tweet. Same draft-first gate as postTweet: only
  * actually posts when X_LIVE === "true", otherwise logs what would have

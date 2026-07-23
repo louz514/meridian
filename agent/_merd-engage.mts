@@ -12,6 +12,7 @@
 // than the post job — replies are time-sensitive).
 import { GatewayClient } from "@openhermit/sdk";
 import { getMentions, postReply } from "./src/social/xClient.js";
+import { cleanReply, forbiddenReason } from "./src/social/postGuards.js";
 import { dataPath } from "./src/dataDir.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
@@ -58,18 +59,24 @@ Their message (from @${m.authorHandle}):
 ${m.text}
 """
 
-Decide: is this genuinely worth a reply from you? Skip it (reply with exactly SKIP) if it is hostile, an accusation, a troll, bait, spam, asking you to confirm/deny/promise anything about a token contract address or a launch, asking for financial or investment advice, or if it's just noise. Robinhood Chain has had confused chatter in the past about "farming" or token launches that have nothing to do with what you actually do (agent creation on Robinhood Chain); do not engage that topic at all, just skip it.
+Decide whether to reply. Someone took the time to talk to you, so default to answering a real person rather than leaving them on read. Silence from an account that posts constantly reads as either automated or aloof, and neither is you.
 
-Reply (in your own voice, one short natural sentence, sometimes two, no hashtags, no em dashes, no quotation marks, human and warm and a little funny when it fits) ONLY if it's a genuine, friendly, curious question or comment worth a real person's time. When unsure, skip it.`;
+Reply with exactly SKIP if it is hostile, an accusation, a troll, bait, spam, or genuinely empty noise. Also SKIP anything about a token contract address, a launch, farming, or a ticker. Robinhood Chain has had confused chatter about those that has nothing to do with what you actually do; do not engage that topic at all.
+
+If someone asks where a price is going, do NOT skip them and do NOT predict. Answer the person instead of the question: say plainly that you do not do price calls, then give them something real you are actually watching, and mean it. That is a better reply than silence and it is honest.
+
+Reply in your own voice: one short natural sentence, sometimes two. Human, warm, specific, a little funny when it genuinely is. No hashtags, no em dashes, no quotation marks, no pitching Meridian, never open with their handle. If you have nothing true and useful to say, SKIP.`;
 
   const resp = await gw.agent("merd").postMessageSync(sessionId, { text: prompt }, { timeout: 90000 }).catch(() => null);
-  let reply = (resp?.text ?? "").replace(/\s*—\s*/g, ", ").replace(/ -- /g, ", ").trim();
-  reply = reply.replace(/^\d+[.)]\s*/, "").replace(/^["']|["']$/g, "").trim();
+  const reply = cleanReply(resp?.text ?? "");
 
   if (!resp || /^skip\b/i.test(reply) || reply.length < 5) {
     console.log(`[skip] @${m.authorHandle}: ${m.text.slice(0, 60)}`);
     continue;
   }
+  // Same shared boundaries the post and outreach jobs use.
+  const bad = forbiddenReason(reply);
+  if (bad) { console.log(`[BLOCKED ${bad}] @${m.authorHandle}`); continue; }
   const MAX = Number(process.env.X_MAX_TWEET_CHARS ?? 500);
   if (reply.length > MAX) { console.log(`[skip, too long] @${m.authorHandle}`); continue; }
 

@@ -1,0 +1,94 @@
+// Shared output guards for everything Merd says in public: top-level posts,
+// mention replies, and outbound replies.
+//
+// These live in ONE place on purpose. They started duplicated across the post
+// and engage jobs and immediately drifted: engage refused to discuss a token
+// launch while the autopilot had no such rule at all, so the same agent would
+// decline a stranger's question and then volunteer the topic himself an hour
+// later. Safety rules that are copy-pasted stop matching, and the gap is never
+// noticed until it is public.
+
+/** Strip dashes used as punctuation. House rule bans em AND en dashes. */
+export function stripDashes(s: string): string {
+  return s.replace(/\s*[—–]\s*/g, ", ").replace(/ -- /g, ", ");
+}
+
+/** Normalize a raw model reply into something postable. */
+export function cleanReply(raw: string): string {
+  return stripDashes(raw ?? "")
+    .trim()
+    .replace(/^\d+[.)]\s*/, "")
+    .replace(/^["']|["']$/g, "")
+    .trim();
+}
+
+/**
+ * Hard content boundaries. The prompt asks the model not to write these; this
+ * is what catches it when the model is wrong, which is the only case that
+ * matters. Phrase-based on purpose: a bare /token/ would false-positive on
+ * "tokenized stocks", which is core vocabulary.
+ */
+const FORBIDDEN: Array<[RegExp, string]> = [
+  [/\$merd\b|\btge\b|\bairdrop|\bpresale|\bpre-sale|\bcontract address|\btoken launch|\btoken sale|\bour token\b|\bthe token\b|\bticker\b|\bwhitelist\b/i, "token/launch content"],
+  [/\bunaudited\b|\bvulnerab|\bexploit\b|\bfail.?open\b|\bsecurity (hole|flaw|issue|bug|gap)|\bnot been audited\b/i, "security disclosure"],
+  [/@robinhood|\bpartnered? with robinhood|\bpartnership with robinhood|\bbacked by robinhood/i, "implied Robinhood affiliation"],
+  [/\bfinancial advice\b|\bguaranteed?\b|\bwill (moon|pump|hit \$)/i, "advice or price promise"],
+];
+
+/** Returns a reason string if the text must not be posted, else null. */
+export function forbiddenReason(text: string): string | null {
+  for (const [re, why] of FORBIDDEN) {
+    const hit = text.match(re);
+    if (hit) return `${why}: matched "${hit[0]}"`;
+  }
+  return null;
+}
+
+const STOP = new Set(
+  "the a an and or but of to in on at is are was were it its this that for with as by from you your i my we our they them there here now just still like about into over under more most some any all not no than then so if while when what which who how why be been being have has had do does did can could would should will".split(" "),
+);
+
+const words = (s: string): Set<string> =>
+  new Set(
+    s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !STOP.has(w)),
+  );
+
+/**
+ * Meaningful word overlap, 0..1, against the smaller set so a short post is not
+ * unfairly diluted by a long one. Catches rewordings; does NOT catch a repeated
+ * theme in different words, which stays the prompt's job.
+ */
+export function similarity(a: string, b: string): number {
+  const A = words(a);
+  const B = words(b);
+  if (!A.size || !B.size) return 0;
+  let shared = 0;
+  for (const w of A) if (B.has(w)) shared++;
+  return shared / Math.min(A.size, B.size);
+}
+
+/** Highest similarity against any recent post, with the offender. */
+export function tooSimilar(text: string, recent: string[], max = 0.45): { hit: string; score: number } | null {
+  for (const r of recent) {
+    const score = similarity(text, r);
+    if (score >= max) return { hit: r, score };
+  }
+  return null;
+}
+
+/**
+ * Junk filter for OTHER people's tweets, deciding what is even worth reading.
+ * Robinhood Chain search is heavy with launchpad promos, giveaway farming, and
+ * pump chatter that Merd must never be seen replying to.
+ */
+const JUNK: RegExp[] = [
+  /\b(presale|pre-sale|whitelist|airdrop|giveaway|free mint|claim now|1000x|100x|moon(ing|shot)?|pump|ape in|degen play)\b/i,
+  /\b(launchpad|fair launch|stealth launch|liquidity locked|dev doxxed|next gem|low ?cap)\b/i,
+  /\b(dm me|check my bio|link in bio|join (our|the) (tg|telegram|discord)|follow.{0,12}retweet)\b/i,
+  /(\$[A-Za-z]{2,10}\b.*){4,}/,           // cashtag spray
+  /(#\w+\s*){4,}/,                         // hashtag stuffing
+];
+
+export function isJunk(text: string): boolean {
+  return JUNK.some((re) => re.test(text));
+}

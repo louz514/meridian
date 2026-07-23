@@ -3,6 +3,7 @@
 // DRY_RUN=1 previews without posting. Meant to run on a cadence.
 import { GatewayClient } from "@openhermit/sdk";
 import { postTweet } from "./src/social/xClient.js";
+import { cleanReply, forbiddenReason, tooSimilar } from "./src/social/postGuards.js";
 import { dataPath } from "./src/dataDir.js";
 import { existsSync, readFileSync, appendFileSync } from "node:fs";
 
@@ -100,10 +101,9 @@ If nothing is genuinely worth saying right now: reply with exactly PASS.`;
 const sessionId = "x-autopilot";
 await gw.agent("merd").openSession({ sessionId, source: { kind: "api", interactive: true, type: "direct" } }).catch(() => {});
 const resp = await gw.agent("merd").postMessageSync(sessionId, { text: prompt }, { timeout: 90000 });
-// En dash (U+2013) was slipping through: only the em dash was handled, while
-// the house rule bans both as punctuation.
-let tweet = (resp.text ?? "").replace(/\s*[—–]\s*/g, ", ").replace(/ -- /g, ", ").trim();
-tweet = tweet.replace(/^\d+[.)]\s*/, "").replace(/^["']|["']$/g, "").trim();
+// Shared with the reply jobs so the rules cannot drift apart. Also strips en
+// dashes, which used to slip through when only the em dash was handled.
+const tweet = cleanReply(resp.text ?? "");
 
 // Merd's decision log (his own record of what he chose, so there is a memory of it)
 const logLine = { at: Date.now(), decision: /^pass\b/i.test(tweet) ? "hold" : "post", text: tweet.slice(0, 300) };
@@ -114,39 +114,17 @@ console.log(`Merd decided to post (${tweet.length} chars):\n${tweet}\n`);
 if (tweet.length > 500) { console.log("SKIP: too long even for premium"); process.exit(1); }
 
 // Mechanical backstop for the hard boundaries in the prompt. The model is asked
-// not to write these; this is what catches it when the model is wrong, which is
-// the only case that matters. Deliberately phrase-based: "token" alone would
-// false-positive on "tokenized stocks", which is core vocabulary.
-const FORBIDDEN: Array<[RegExp, string]> = [
-  [/\$merd\b|\btge\b|\bairdrop|\bpresale|\bpre-sale|\bcontract address|\btoken launch|\btoken sale|\bour token\b|\bthe token\b|\bticker\b|\bwhitelist\b/i, "token/launch content"],
-  [/\bunaudited\b|\bvulnerab|\bexploit\b|\bfail.?open\b|\bsecurity (hole|flaw|issue|bug|gap)|\bnot been audited\b/i, "security disclosure"],
-  [/@robinhood|\bpartnered? with robinhood|\bpartnership with robinhood|\bbacked by robinhood/i, "implied Robinhood affiliation"],
-  [/\bfinancial advice\b|\bguaranteed?\b|\bwill (moon|pump|hit \$)/i, "advice or price promise"],
-];
-for (const [re, why] of FORBIDDEN) {
-  const hit = tweet.match(re);
-  if (hit) { console.log(`BLOCKED (${why}): matched "${hit[0]}". Not posting.`); process.exit(0); }
-}
+// not to write these; this catches it when the model is wrong, which is the
+// only case that matters.
+const bad = forbiddenReason(tweet);
+if (bad) { console.log(`BLOCKED (${bad}). Not posting.`); process.exit(0); }
 
 // Similarity dedupe. The old check compared only the first 40 characters for an
-// exact match, so any reworded opening sailed past it and near-duplicate themes
-// shipped hours apart. This compares meaningful word overlap instead.
-const STOP = new Set("the a an and or but of to in on at is are was were it its this that for with as by from you your i my we our they them there here now just still like about into over under more most some any all not no than then so if while when what which who how why be been being have has had do does did can could would should will".split(" "));
-const words = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !STOP.has(w)));
-const overlap = (a: Set<string>, b: Set<string>) => {
-  if (!a.size || !b.size) return 0;
-  let shared = 0;
-  for (const w of a) if (b.has(w)) shared++;
-  return shared / Math.min(a.size, b.size);
-};
-const tw = words(tweet);
-const SIM_MAX = Number(process.env.MERD_SIMILARITY_MAX ?? 0.45);
-for (const r of recent) {
-  const sim = overlap(tw, words(r));
-  if (sim >= SIM_MAX) {
-    console.log(`SKIP: ${(sim * 100).toFixed(0)}% word overlap with a recent post:\n  ${r.slice(0, 90)}`);
-    process.exit(0);
-  }
+// exact match, so any reworded opening sailed past it.
+const dupe = tooSimilar(tweet, recent, Number(process.env.MERD_SIMILARITY_MAX ?? 0.45));
+if (dupe) {
+  console.log(`SKIP: ${(dupe.score * 100).toFixed(0)}% word overlap with a recent post:\n  ${dupe.hit.slice(0, 90)}`);
+  process.exit(0);
 }
 
 if (DRY) { console.log("DRY RUN, not posting."); process.exit(0); }
