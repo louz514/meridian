@@ -28,11 +28,18 @@ const WALLET = getAgentAddress() ?? "0x0000000000000000000000000000000000000000"
 const MARKET_MAKING_SINCE = Date.parse("2026-07-14T00:00:00Z");
 // Inception isn't fully in executions.jsonl (the very first funding predates
 // it), so we anchor the equity series with the known starting mark.
+// Pinned to the WALLET it describes. The house key was rotated on 2026-07-23 and
+// this anchor still described the previous wallet's funding, so a brand-new
+// empty wallet was published as "-$244 since inception". An anchor that outlives
+// the wallet it belongs to is just another wrong number.
 const INCEPTION = {
+  wallet: "0x76a4fF023Faa6Ea3E378d9e6d74Eb6B2676FB38c",
   ts: Date.parse("2026-07-11T20:50:00Z"),
   totalUsd: 244,
   note: "Agent funded and made its first autonomous trade: ~$180 USDG deployed + ~$64 ETH gas reserve.",
 };
+/** True only when the anchor actually describes the wallet we are reporting on. */
+const inceptionApplies = INCEPTION.wallet.toLowerCase() === WALLET.toLowerCase();
 
 export interface EquityPoint {
   ts: number;
@@ -218,14 +225,18 @@ export async function performanceSummary() {
   const seenTx = new Set(logged.map((e) => e.txUrl).filter(Boolean));
   const timeline = [...GENESIS.filter((g) => !seenTx.has(g.txUrl)), ...logged].sort((a, b) => a.ts - b.ts);
 
-  // Equity series: inception anchor → forward snapshots → live point.
+  // Equity series: inception anchor → forward snapshots → live point. The anchor
+  // and the historical snapshots belong to the previous wallet, so after a
+  // rotation the series starts from the new wallet's own observations only.
   const series: EquityPoint[] = [
-    { ts: INCEPTION.ts, totalUsd: INCEPTION.totalUsd, lpValueUsd: 0, stockUsd: 180, cashUsd: 64 },
-    ...snapshots,
+    ...(inceptionApplies
+      ? [{ ts: INCEPTION.ts, totalUsd: INCEPTION.totalUsd, lpValueUsd: 0, stockUsd: 180, cashUsd: 64 }]
+      : []),
+    ...(inceptionApplies ? snapshots : []),
     ...(live ? [live] : []),
   ].sort((a, b) => a.ts - b.ts);
 
-  const currentUsd = live?.totalUsd ?? series[series.length - 1]?.totalUsd ?? INCEPTION.totalUsd;
+  const currentUsd = live?.totalUsd ?? series[series.length - 1]?.totalUsd ?? 0;
   const fills = timeline.filter((e) => e.success && e.txUrl).length;
 
   // Real P&L needs capital flows. `currentUsd - inception` counts every deposit
@@ -240,16 +251,20 @@ export async function performanceSummary() {
   return {
     wallet: WALLET,
     explorer: `${EXPLORER}/address/${WALLET}`,
-    inception: INCEPTION,
+    inception: inceptionApplies ? INCEPTION : null,
     current: {
       totalUsd: currentUsd,
       lpValueUsd: live?.lpValueUsd ?? 0,
       cashUsd: live?.cashUsd ?? 0,
-      // Kept for continuity, but explicitly labelled: this is NOT profit and
-      // loss, it is the change in wallet value including every deposit and
-      // withdrawal. Use pnl below for the real number.
-      changeVsInceptionUsd: currentUsd - INCEPTION.totalUsd,
-      changeVsInceptionNote: "wallet value vs inception — INCLUDES deposits and withdrawals, not P&L",
+      // Only meaningful while the anchor describes THIS wallet. Kept explicitly
+      // labelled either way: it is not profit and loss, it is the change in
+      // wallet value including every deposit and withdrawal. Use pnl below.
+      ...(inceptionApplies
+        ? {
+            changeVsInceptionUsd: currentUsd - INCEPTION.totalUsd,
+            changeVsInceptionNote: "wallet value vs inception — INCLUDES deposits and withdrawals, not P&L",
+          }
+        : { changeVsInceptionNote: "no inception anchor for this wallet (house wallet rotated)" }),
     },
     capital: flows
       ? {
@@ -264,7 +279,15 @@ export async function performanceSummary() {
       live?.degraded
         ? { available: false, note: `holdings incomplete: ${live.degraded}` }
         : pnlUsd === null
-        ? { available: false, note: "capital flows unavailable — P&L cannot be computed without them" }
+        ? {
+            available: false,
+            // Distinguish "we could not read the flows" from "this wallet has
+            // not been funded yet". Both withhold P&L; only one is a fault.
+            note:
+              flows && !flows.degraded
+                ? "no capital contributed to this wallet yet — nothing to measure"
+                : "capital flows unavailable — P&L cannot be computed without them",
+          }
         : {
             available: true,
             netUsd: Math.round(pnlUsd * 100) / 100,
