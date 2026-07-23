@@ -17,7 +17,11 @@ import { capitalFlows } from "./capitalFlows.js";
 
 const USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
 const EQUITY_PATH = dataPath("equity-snapshots.jsonl");
-const WALLET = "0x76a4fF023Faa6Ea3E378d9e6d74Eb6B2676FB38c";
+// Resolved from the configured signer rather than hardcoded, so rotating the
+// house wallet is an env change and not a code change. The previous address
+// (0x76a4fF...FB38c) was pinned here, which meant a key rotation would have
+// silently kept reporting the old wallet's holdings as the book.
+const WALLET = getAgentAddress() ?? "0x0000000000000000000000000000000000000000";
 
 // The market-making pivot: executions before this are the momentum experiment,
 // after are the LP era. Used to split the track record into its two chapters.
