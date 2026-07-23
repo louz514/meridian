@@ -13,13 +13,41 @@ export function stripDashes(s: string): string {
   return s.replace(/\s*[—–]\s*/g, ", ").replace(/ -- /g, ", ");
 }
 
+/**
+ * Drop sentences that repeat one already said.
+ *
+ * The gateway intermittently returns the whole answer twice, the second copy
+ * lowercased and concatenated with no space ("...professional market.automating
+ * the liquidity-lock checks..."). It is not every response, which is worse than
+ * always: a malformed reply would reach the timeline every so often and look
+ * broken. Caught in a dry run before the outreach job went live.
+ */
+export function stripSelfEcho(s: string): string {
+  // Split after . ! ? but NOT when a digit follows: "109.3%" is one number, not
+  // two sentences. Splitting there and rejoining inserted a space and printed
+  // "109. 3%", which is worse than the echo, since the figures are the whole
+  // reason anyone trusts this account.
+  const parts = s.split(/(?<=[.!?])(?!\d)/).map((p) => p.trim()).filter((p) => p.length);
+  if (parts.length < 2) return s;
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const p of parts) {
+    const key = p.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (key.length > 12 && seen.has(key)) continue; // short fragments may legitimately recur
+    seen.add(key);
+    kept.push(p.trim());
+  }
+  return kept.join(" ");
+}
+
 /** Normalize a raw model reply into something postable. */
 export function cleanReply(raw: string): string {
-  return stripDashes(raw ?? "")
+  const s = stripDashes(raw ?? "")
     .trim()
     .replace(/^\d+[.)]\s*/, "")
     .replace(/^["']|["']$/g, "")
     .trim();
+  return stripSelfEcho(s).trim();
 }
 
 /**

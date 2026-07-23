@@ -18,9 +18,12 @@ LAUNCH_DIR="$HOME/Library/LaunchAgents"
 LOG_DIR="$HOME/Library/Logs"
 
 # label | runner | interval (seconds) | log file
+# Outreach runs on the longest cadence of the three: replying into other
+# people's conversations should read as considered, not constant.
 JOBS=(
   "com.meridian.merdx|_merd-post.sh|7200|merd-autopilot.log"
   "com.meridian.merdengage|_merd-engage.sh|1800|merd-engage.log"
+  "com.meridian.merdoutreach|_merd-outreach.sh|10800|merd-outreach.log"
 )
 
 if [ "${1:-}" = "--uninstall" ]; then
