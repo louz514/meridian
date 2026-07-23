@@ -2,8 +2,8 @@
 # Snapshot Merd's memory + action logs into his PRIVATE repo so they survive this
 # machine WITHOUT being public. Self-throttles to ~once a day (FORCE=1 overrides).
 export PATH="/usr/local/bin:$PATH"
-AGENT=/Users/zach/Downloads/meridian/agent
-MEM=/Users/zach/meridian-memory   # PRIVATE repo (louz514/meridian-memory)
+AGENT="$(cd "$(dirname "$0")" && pwd)"
+MEM="$HOME/meridian-memory"   # PRIVATE repo (louz514/meridian-memory)
 STAMP="$HOME/.merd-backup-stamp"
 
 if [ "$FORCE" != "1" ] && [ -f "$STAMP" ] && [ $(( $(date +%s) - $(cat "$STAMP" 2>/dev/null || echo 0) )) -lt 72000 ]; then
