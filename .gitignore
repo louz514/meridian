@@ -26,6 +26,10 @@ position-state.json
 scripts-pushState.sh
 _volprobe.mjs
 
+# launchd jobs are generated per-machine by agent/install-agents.sh, which fills
+# in absolute paths. Committing them would leak local paths and go stale on a move.
+agent/com.meridian.*.plist
+
 # Frontend lives in its own private repo (meridian-frontend)
 frontend/
 agent/merd-memory/
