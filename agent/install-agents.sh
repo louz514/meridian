@@ -22,7 +22,7 @@ LOG_DIR="$HOME/Library/Logs"
 # people's conversations should read as considered, not constant.
 JOBS=(
   "com.meridian.merdx|_merd-post.sh|7200|merd-autopilot.log"
-  "com.meridian.merdengage|_merd-engage.sh|1800|merd-engage.log"
+  "com.meridian.merdengage|_merd-engage.sh|120|merd-engage.log"
   "com.meridian.merdoutreach|_merd-outreach.sh|10800|merd-outreach.log"
 )
 

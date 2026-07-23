@@ -83,6 +83,10 @@ export interface Mention {
   authorId: string;
   authorHandle: string;
   createdAt: string;
+  /** The tweet this one replies to, when there is one. Usually Merd's own. */
+  parentText?: string;
+  parentIsMine?: boolean;
+  conversationId?: string;
 }
 
 /**
@@ -100,23 +104,36 @@ export async function getMentions(sinceId?: string): Promise<Mention[]> {
       accessSecret: cfg.accessSecret,
     });
     const me = await client.v2.me();
+    // referenced_tweets.id pulls the parent INLINE, so thread context costs no
+    // extra request. Without it every mention is judged in isolation and a
+    // follow-up like "why though?" is unanswerable.
     const page = await client.v2.userMentionTimeline(me.data.id, {
       max_results: 30,
       since_id: sinceId,
-      "tweet.fields": ["author_id", "created_at", "text"],
-      expansions: ["author_id"],
+      "tweet.fields": ["author_id", "created_at", "text", "conversation_id", "referenced_tweets"],
+      expansions: ["author_id", "referenced_tweets.id"],
     });
     const users: Record<string, string> = {};
     for (const u of page.includes?.users ?? []) users[u.id] = u.username;
+    const byId: Record<string, { text: string; authorId?: string }> = {};
+    for (const t of page.includes?.tweets ?? []) byId[t.id] = { text: t.text, authorId: t.author_id };
+
     const list = (page.data?.data ?? []).filter((t) => t.author_id !== me.data.id);
     return list
-      .map((t) => ({
-        id: t.id,
-        text: t.text,
-        authorId: t.author_id ?? "",
-        authorHandle: users[t.author_id ?? ""] ?? "unknown",
-        createdAt: t.created_at ?? "",
-      }))
+      .map((t) => {
+        const parentId = (t.referenced_tweets ?? []).find((r) => r.type === "replied_to")?.id;
+        const parent = parentId ? byId[parentId] : undefined;
+        return {
+          id: t.id,
+          text: t.text,
+          authorId: t.author_id ?? "",
+          authorHandle: users[t.author_id ?? ""] ?? "unknown",
+          createdAt: t.created_at ?? "",
+          parentText: parent?.text,
+          parentIsMine: parent?.authorId === me.data.id,
+          conversationId: t.conversation_id,
+        };
+      })
       .reverse(); // oldest-first
   } catch {
     return [];
