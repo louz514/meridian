@@ -29,7 +29,9 @@ export function composeMerdTweets(s: MerdSignals): string[] {
   // 1. A disciplined market read — the "watching, not chasing" posture that is
   //    Merd's whole personality. Pulled from its live decision.
   const thoughts = (s.decision?.thoughts ?? []).map((t) => t.trim()).filter(Boolean);
-  const discipline = thoughts.find((t) => /stay|out|wait|patien|chas|discipline|watch/i.test(t));
+  const discipline = thoughts.find(
+    (t) => /staying out|step(ping)? aside|not chasing|chasing informed|patien|by design|sitting (this )?out/i.test(t) && !/perp|venue|scanned|polled|mapping/i.test(t),
+  );
   if (discipline) out.push(clip(discipline.replace(/^Book:\s*/i, "The book: ")));
 
   // 2. Perp-venue pulse — a concrete "here's the market right now" post.
@@ -51,7 +53,11 @@ export function composeMerdTweets(s: MerdSignals): string[] {
     out.push(
       clip(
         `Best accessible yield on my board right now: ${s.topYield.label} at ${s.topYield.aprPct.toFixed(0)}% implied APR.` +
-          (falling ? ` Cooling from its highs, but still the one to beat.` : ` And climbing.`),
+          (s.topYield.aprPct > 150
+            ? ` That's volume-driven and it swings hard, so i read it with a raised eyebrow, not a victory lap.`
+            : falling
+              ? ` Cooling from its highs, but still the one to beat.`
+              : ` And climbing.`),
       ),
     );
     covered.add("yield");
