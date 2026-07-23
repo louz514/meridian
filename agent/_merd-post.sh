@@ -6,3 +6,5 @@ set -a; [ -f .env ] && source .env; set +a
 export X_LIVE=true
 echo "=== $(date) ===" >> _autopilot.log
 ./node_modules/.bin/tsx _merd-autopilot.mts >> _autopilot.log 2>&1
+# back up Merd's memory to GitHub (self-throttles to ~once/day)
+bash _merd-backup.sh >> _autopilot.log 2>&1
