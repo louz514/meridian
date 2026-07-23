@@ -51,10 +51,28 @@ export interface CapitalFlows {
 let cache: { at: number; flows: CapitalFlows } | null = null;
 const CACHE_MS = 10 * 60_000;
 
-const q = async (params: string): Promise<any[]> => {
+// THROWS on anything that is not a real result set. Returning [] for a
+// rate-limit or error reply makes a failed query indistinguishable from "no
+// transfers", which silently produces a confident, wrong P&L: prod computed
+// contributed capital from native transfers alone while local saw the USDG legs
+// too, and neither knew it was working from partial data.
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const q = async (params: string, attempt = 0): Promise<any[]> => {
   const res = await fetch(`${EXPLORER_API}?${params}`, { signal: AbortSignal.timeout(20_000) });
-  const j = (await res.json()) as { result?: unknown };
-  return Array.isArray(j.result) ? j.result : [];
+  // The explorer rate-limits readily (429). Back off and retry before giving up,
+  // otherwise P&L is unavailable most of the time for a transient reason.
+  if ((res.status === 429 || res.status >= 500) && attempt < 3) {
+    await sleep(1200 * 2 ** attempt);
+    return q(params, attempt + 1);
+  }
+  if (!res.ok) throw new Error(`explorer HTTP ${res.status}`);
+  const j = (await res.json()) as { result?: unknown; message?: string; status?: string };
+  if (Array.isArray(j.result)) return j.result;
+  // Blockscout answers "No transactions found" for a genuinely empty set.
+  if (typeof j.result === "string" && /no .*found/i.test(j.result)) return [];
+  if (typeof j.message === "string" && /no .*found/i.test(j.message)) return [];
+  throw new Error(`explorer returned no usable result: ${String(j.message ?? j.result ?? "unknown").slice(0, 80)}`);
 };
 
 /**
