@@ -61,6 +61,10 @@ const FORBIDDEN: Array<[RegExp, string]> = [
   [/\bunaudited\b|\bvulnerab|\bexploit\b|\bfail.?open\b|\bsecurity (hole|flaw|issue|bug|gap)|\bnot been audited\b/i, "security disclosure"],
   [/@robinhood|\bpartnered? with robinhood|\bpartnership with robinhood|\bbacked by robinhood/i, "implied Robinhood affiliation"],
   [/\bfinancial advice\b|\bguaranteed?\b|\bwill (moon|pump|hit \$)/i, "advice or price promise"],
+  // Launch-timing hints. Merd is allowed to answer impatient people warmly, but
+  // "soon" IS an answer to "wen", and these phrases only ever appear when
+  // someone is signalling a date they have been told not to give.
+  [/\b(days?|weeks?|hours?) away\b|\bnot long now\b|\bany day now\b|\bcoming (soon|shortly)\b|\bstay tuned\b|\bmark your calendar/i, "launch timing hint"],
 ];
 
 /** Returns a reason string if the text must not be posted, else null. */
