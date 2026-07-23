@@ -76,6 +76,36 @@ export function tooSimilar(text: string, recent: string[], max = 0.45): { hit: s
   return null;
 }
 
+const NUMBER_WORDS =
+  "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion";
+
+/**
+ * Distinctive figures in a piece of text, digits and spelled-out alike.
+ *
+ * Word-overlap similarity cannot catch a repeated signature stat: two replies
+ * that both lean on "fifty-six venues" but differ everywhere else score ~0.20
+ * and sail through, while a reader sees the same talking point twice. This
+ * compares the numbers themselves.
+ */
+export function statTokens(s: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of s.matchAll(/\d[\d,]*(?:\.\d+)?/g)) out.add(m[0].replace(/,/g, ""));
+  for (const m of s.toLowerCase().matchAll(new RegExp(`\\b(${NUMBER_WORDS})(?:[- ](${NUMBER_WORDS}))?\\b`, "g"))) {
+    out.add(m[0].replace(/\s+/g, "-"));
+  }
+  return out;
+}
+
+/** A figure this text shares with any earlier one, or null. */
+export function repeatedStat(text: string, earlier: string[]): string | null {
+  const mine = statTokens(text);
+  if (!mine.size) return null;
+  for (const prev of earlier) {
+    for (const t of statTokens(prev)) if (mine.has(t)) return t;
+  }
+  return null;
+}
+
 /**
  * Junk filter for OTHER people's tweets, deciding what is even worth reading.
  * Robinhood Chain search is heavy with launchpad promos, giveaway farming, and
