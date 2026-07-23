@@ -13,6 +13,7 @@ import { poolPricesUsd } from "./venues/stockPools.js";
 import { lpPositionsWithValue } from "./venues/lpPositions.js";
 import { fetchEthUsd } from "./venues/uniswapV4.js";
 import { readAllExecutions, type ExecutionRecord } from "./executionsLog.js";
+import { capitalFlows } from "./capitalFlows.js";
 
 const USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
 const EQUITY_PATH = dataPath("equity-snapshots.jsonl");
@@ -35,6 +36,8 @@ export interface EquityPoint {
   lpValueUsd: number;
   stockUsd: number;
   cashUsd: number;
+  /** Set when a holdings read failed, so totalUsd is known to be incomplete. */
+  degraded?: string;
 }
 
 /** Live mark-to-market of the whole wallet: LP position value + loose stock + cash. */
@@ -53,18 +56,34 @@ export async function computeEquityNow(): Promise<EquityPoint | null> {
       functionName: "balanceOf",
       args: [address],
     }),
-    lpPositionsWithValue().catch(() => []),
+    // NOT `.catch(() => [])`. A failed read there is indistinguishable from
+    // "no positions", so a transient RPC failure published the wallet as $0.81
+    // while a healthy $157 NVDA position sat in the PoolManager, and the public
+    // track record read -99.67%. Silence about a failure is worse than the
+    // failure. Carry the outcome so the caller can refuse to publish a total it
+    // knows is incomplete.
+    lpPositionsWithValue().then(
+      (p) => ({ ok: true as const, positions: p }),
+      (e) => ({ ok: false as const, error: String((e as Error)?.message ?? e).slice(0, 160) }),
+    ),
   ]);
   let stockUsd = 0;
   for (const [sym, qty] of Object.entries(balances)) {
     const px = prices[sym];
     if (qty && px && qty * px >= 0.01) stockUsd += qty * px;
   }
-  const lpValueUsd = lp.reduce((a, p) => a + p.valueUsd, 0);
+  const lpValueUsd = lp.ok ? lp.positions.reduce((a, p) => a + p.valueUsd, 0) : 0;
   const usdg = Number(usdgRaw) / 1e6;
   const eth = Number(ethRaw) / 1e18;
   const cashUsd = usdg + eth * ethUsd;
-  return { ts: Date.now(), totalUsd: stockUsd + lpValueUsd + cashUsd, lpValueUsd, stockUsd, cashUsd };
+  return {
+    ts: Date.now(),
+    totalUsd: stockUsd + lpValueUsd + cashUsd,
+    lpValueUsd,
+    stockUsd,
+    cashUsd,
+    ...(lp.ok ? {} : { degraded: `LP position read failed (${lp.error}) — total EXCLUDES LP value` }),
+  };
 }
 
 /** Forward mark-to-market log. Operator-only writer (needs no key, but gating on the signer keeps ONE writer; the cloud serves the pushed file). */
@@ -205,6 +224,15 @@ export async function performanceSummary() {
   const currentUsd = live?.totalUsd ?? series[series.length - 1]?.totalUsd ?? INCEPTION.totalUsd;
   const fills = timeline.filter((e) => e.success && e.txUrl).length;
 
+  // Real P&L needs capital flows. `currentUsd - inception` counts every deposit
+  // as profit and every withdrawal as loss: a deliberate 0.0754 ETH withdrawal
+  // on 2026-07-22 was being published as part of a -99.67% "loss". Contributed
+  // capital is deposits minus withdrawals, so P&L is what the book actually did.
+  const ethUsdNow = await fetchEthUsd().catch(() => 0);
+  const flows = ethUsdNow > 0 ? await capitalFlows(WALLET, ethUsdNow).catch(() => null) : null;
+  const contributed = flows && !flows.degraded && flows.netContributedUsd > 0 ? flows.netContributedUsd : null;
+  const pnlUsd = contributed === null ? null : currentUsd - contributed;
+
   return {
     wallet: WALLET,
     explorer: `${EXPLORER}/address/${WALLET}`,
@@ -213,9 +241,32 @@ export async function performanceSummary() {
       totalUsd: currentUsd,
       lpValueUsd: live?.lpValueUsd ?? 0,
       cashUsd: live?.cashUsd ?? 0,
-      netUsd: currentUsd - INCEPTION.totalUsd,
-      netPct: ((currentUsd - INCEPTION.totalUsd) / INCEPTION.totalUsd) * 100,
+      // Kept for continuity, but explicitly labelled: this is NOT profit and
+      // loss, it is the change in wallet value including every deposit and
+      // withdrawal. Use pnl below for the real number.
+      changeVsInceptionUsd: currentUsd - INCEPTION.totalUsd,
+      changeVsInceptionNote: "wallet value vs inception — INCLUDES deposits and withdrawals, not P&L",
     },
+    capital: flows
+      ? {
+          depositedUsd: Math.round((flows.ethInUsd + flows.usdgInUsd) * 100) / 100,
+          withdrawnUsd: Math.round((flows.ethOutUsd + flows.usdgOutUsd) * 100) / 100,
+          netContributedUsd: Math.round(flows.netContributedUsd * 100) / 100,
+          transfers: flows.transfers,
+          degraded: flows.degraded ?? null,
+        }
+      : null,
+    pnl:
+      live?.degraded
+        ? { available: false, note: `holdings incomplete: ${live.degraded}` }
+        : pnlUsd === null
+        ? { available: false, note: "capital flows unavailable — P&L cannot be computed without them" }
+        : {
+            available: true,
+            netUsd: Math.round(pnlUsd * 100) / 100,
+            netPct: contributed ? Math.round((pnlUsd / contributed) * 10000) / 100 : null,
+            note: "current wallet value minus net capital contributed (deposits less withdrawals)",
+          },
     stats: {
       onChainFills: fills,
       totalEvents: execs.length,
