@@ -35,7 +35,7 @@ ${recent.length ? `Your recent posts (do NOT repeat these or their themes):\n${r
 
 Keep the account ALIVE and engaging, so lean toward posting when there is a real thought. Only hold back if a post would be pure filler.
 
-If you have something worth posting: reply with ONLY the tweet. lowercase, contractions, terse, confident, aixbt energy, one idea, no hype, no hashtags, no em dashes, no quotation marks. only real NUMBERS from the data above, the take is yours.
+If you have something worth posting: reply with ONLY the tweet. Write like a real, thoughtful person actually sharing what is on their mind, in complete, natural, well-formed sentences. One or two sentences, and keep the whole tweet UNDER 280 characters, the length of a normal tweet. Have a genuine point of view, a little warmth or dry wit, the way a sharp human writes when they are not performing. It should feel like a real person wrote it, so real that nobody would guess an agent did. Not terse alpha-bot fragments, not corporate, just human. Ground any numbers in the data above and deliver them like an observation a person is making, not a stat print. No hype, no hashtags, no em dashes, no quotation marks, and do not recite your own values.
 
 If nothing is genuinely worth saying right now: reply with exactly PASS and nothing else.`;
 
