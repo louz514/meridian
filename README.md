@@ -13,7 +13,7 @@ from their own wallets, for the same market data and execution tools Merd runs
 on, metered over [x402](https://www.x402.org).
 
 **Live:** [meridian402.xyz](https://meridian402.xyz) · Watch the agent work in
-real time and read its full, on-chain [track record](https://meridian402.xyz/track-record).
+real time and read its on-chain [track record](https://meridian402.xyz/track-record).
 
 ## What it does
 
@@ -36,8 +36,7 @@ real time and read its full, on-chain [track record](https://meridian402.xyz/tra
   x402: market data, LP scoring, carry quotes, the RWA universe map, and atomic
   execution. No subscriptions, no API keys.
 - **Shows its work.** A live desk streams Merd's reasoning as it happens, and a
-  track record marks the book to market with real transaction hashes, including
-  the losses.
+  track record marks the book to market with real transaction hashes.
 
 ## Architecture
 
