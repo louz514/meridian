@@ -52,7 +52,12 @@ if (existsSync(ledger)) {
 // prompt. A subject like "security: fail-closed operator gate" tells a reader
 // there WAS a fail-open gate, and a paraphrase of it is a public vulnerability
 // report on our own service. Anything matching SENSITIVE never reaches the model.
-const SENSITIVE = /\b(security|vuln|exploit|auth|token gate|bearer|secret|key|credential|audit|unaudited|cve|injection|bypass|leak|patch|hotfix|0day|rate.?limit|fail.?open|fail.?closed)\b/i;
+// Blocks two families of internal work Merd must never narrate publicly:
+// security details, AND anything about the book's own money — P&L, losses,
+// the track record, wallet moves. The latter was added after Merd autonomously
+// posted that a real ~99% loss was "a display bug on a break-even book",
+// inheriting the wrong premise from a track-record commit.
+const SENSITIVE = /\b(security|vuln|exploit|auth|token gate|bearer|secret|key|credential|audit|unaudited|cve|injection|bypass|leak|patch|hotfix|0day|rate.?limit|fail.?open|fail.?closed|track.?record|p&?n?l|pnl|break.?even|draw.?down|loss(es)?|deficit|house.?wallet|rotate|rotation|compromis|signer|custody)\b/i;
 let shipped: string[] = [];
 try {
   const { execSync } = await import("node:child_process");
