@@ -123,7 +123,13 @@ export async function lpScores(windowDays = 2.5): Promise<LpScoreReport> {
         const praw = (Number(l.args.sqrtPriceX96) / Q96) ** 2;
         const px = (tokenIs0 ? praw : 1 / praw) * 1e12;
         const usdgAmt = tokenIs0 ? l.args.amount1! : l.args.amount0!;
-        swaps.get(name)!.push({ t: blockTs(l.blockNumber), px, usd: Math.abs(Number(usdgAmt)) / 1e6, dir: 0 });
+        // Drop degenerate ticks. A near-zero or non-finite price becomes the
+        // DENOMINATOR of the markout return below, so one bad sqrtPriceX96 does
+        // not just add noise, it produces a number like 1.5e30 and makes that
+        // pool rank first by a factor of 10^27. Seen live on USAR/USDG 1%.
+        const usd = Math.abs(Number(usdgAmt)) / 1e6;
+        if (!Number.isFinite(px) || px <= 0 || !Number.isFinite(usd)) continue;
+        swaps.get(name)!.push({ t: blockTs(l.blockNumber), px, usd, dir: 0 });
       }
       from = to + 1n;
       if (++streak >= 3 && step < MAX_STEP) {
@@ -166,7 +172,12 @@ export async function lpScores(windowDays = 2.5): Promise<LpScoreReport> {
         else break;
       }
       if (!later) continue;
-      markout += sw.dir * ((later.px - sw.px) / sw.px) * sw.usd;
+      const ret = (later.px - sw.px) / sw.px;
+      // A real 30-minute markout on these pools is fractions of a percent. Any
+      // |return| this large is corrupt tick data, not information, and letting
+      // it through would dominate the whole score.
+      if (!Number.isFinite(ret) || Math.abs(ret) > 0.5) continue;
+      markout += sw.dir * ret * sw.usd;
     }
     const net = fees - markout;
     pools.push({
