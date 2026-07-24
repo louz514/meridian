@@ -16,7 +16,7 @@
 //
 // State is derived from the clock and each position's own tick span, so a
 // guard restart (tsx watch on the operator machine) loses nothing.
-import { openPositions, withdrawPosition, mintRange, poolTick, lastMintedPosition, uncollectedFeesUsd, collectFees, type LpPositionRecord } from "./venues/lpPositions.js";
+import { openPositionsOnChain, withdrawPosition, mintRange, poolTick, lastMintedPosition, uncollectedFeesUsd, collectFees, type LpPositionRecord } from "./venues/lpPositions.js";
 import { realBuyStockFromNative, realSellStockForUsdg, poolPricesUsd, isTradable, isAutoExecutable, poolFeePct } from "./venues/stockPools.js";
 import { getAgentSigner, getPublicClient } from "./venues/signer.js";
 import { readStockBalances } from "./venues/positionAccounting.js";
@@ -367,7 +367,7 @@ export function startLpGuard(): NodeJS.Timeout {
     const now = new Date();
     const phase = phaseOf(now);
 
-    const positions = openPositions();
+    const positions = await openPositionsOnChain();
     // Flat during market hours → auto-recovery re-establishes the position
     // (a failed retile or a weekend drift-pull would otherwise leave capital
     // idle out of the market forever). Off-hours we stay flat by design.

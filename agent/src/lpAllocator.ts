@@ -11,7 +11,7 @@ import { appendLedger } from "./ledger.js";
 import { getPublicClient } from "./venues/signer.js";
 import { lpScores } from "./signals/lpScore.js";
 import { qualifyDeployablePools } from "./signals/poolQualify.js";
-import { openPositions, LP_BASELINE_SYMBOLS } from "./venues/lpPositions.js";
+import { openPositionsOnChain, LP_BASELINE_SYMBOLS } from "./venues/lpPositions.js";
 import { poolCandidates, poolFeePct } from "./venues/stockPools.js";
 import { dataPath } from "./dataDir.js";
 
@@ -117,7 +117,7 @@ export async function scanOpportunities(capitalUsd = 160, widthPct = 2): Promise
   opps.sort((a, b) => b.expectedNetPerDayUsd - a.expectedNetPerDayUsd);
 
   const best = opps[0] ?? null;
-  const currentSymbol = openPositions()[0]?.symbol ?? null;
+  const currentSymbol = (await openPositionsOnChain())[0]?.symbol ?? null;
   const current = opps.find((o) => o.symbol === currentSymbol) ?? null;
 
   let recommendation: string;

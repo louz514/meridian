@@ -8,7 +8,7 @@
 // the clean experiment; lifetime collected fees are a secondary tally.
 import { keccak256, encodeAbiParameters, encodePacked, parseAbiParameters, parseAbiItem, type Address } from "viem";
 import { getPublicClient } from "./venues/signer.js";
-import { openPositions } from "./venues/lpPositions.js";
+import { openPositionsOnChain } from "./venues/lpPositions.js";
 import { readAllExecutions } from "./executionsLog.js";
 import { INDEX_CONTRACTS } from "./venues/indexContracts.js";
 
@@ -61,7 +61,7 @@ function collectedSince(symbol: string, since: number): number {
 
 export async function marketMakingProof(): Promise<MarketMakingProof> {
   const client = getPublicClient();
-  const positions = openPositions();
+  const positions = await openPositionsOnChain();
   const out: PositionProof[] = [];
 
   for (const p of positions) {

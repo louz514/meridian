@@ -42,7 +42,7 @@ import { earnOpportunities, prepareCarry } from "./earn/carry.js";
 import { prepareIndexYield } from "./earn/yieldPosition.js";
 import { runScout, scoutAllowed, bountyBoard, settleBounties } from "./earn/scout.js";
 import { readStockBalances } from "./venues/positionAccounting.js";
-import { openPositions, withdrawPosition } from "./venues/lpPositions.js";
+import { openPositionsOnChain, withdrawPosition } from "./venues/lpPositions.js";
 import { realSellStockForUsdg, isTradable, TRADABLE_SYMBOLS } from "./venues/stockPools.js";
 import { fetchEthUsd } from "./venues/uniswapV4.js";
 import { parseAbiItem } from "viem";
@@ -933,7 +933,7 @@ app.post("/api/lp-close", async (req: Request, res: Response) => {
     // close can't interleave with an autonomous retile on the same wallet.
     const { closed, sold } = await withHouseWalletLock("lp-close", async () => {
       const closed: Array<{ tokenId: string; symbol: string; txHash: string }> = [];
-      for (const p of openPositions()) {
+      for (const p of await openPositionsOnChain()) {
         const r = await withdrawPosition({ tokenId: p.tokenId, symbol: p.symbol, liquidity: p.liquidity });
         closed.push({ tokenId: p.tokenId, symbol: p.symbol, txHash: r.txHash });
       }

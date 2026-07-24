@@ -408,6 +408,41 @@ export async function lpPositionsWithValue(): Promise<LpPositionValue[]> {
 }
 
 /**
+ * Open positions from CHAIN, in the LpPositionRecord shape the management and
+ * reporting paths expect. This is the chain-truth replacement for
+ * openPositions(): existence, range, and liquidity come from what the wallet
+ * actually owns and still holds liquidity in; the file contributes only
+ * cost-basis metadata (usdgIn, tokenIn, mintedAt, txHash) by tokenId. Async,
+ * because chain reads are; every caller is already in an async context.
+ *
+ * Throws on an RPC failure (via discoverOwnedPositions) rather than returning [],
+ * so lpGuard never mistakes a failed read for "flat" and triggers a spurious
+ * recovery — a failed read leaves the tick to no-op, not to act on bad data.
+ */
+export async function openPositionsOnChain(): Promise<LpPositionRecord[]> {
+  const wallet = getAgentAddress();
+  if (!wallet) return [];
+  const positions = await discoverOwnedPositions(wallet);
+  const meta = new Map(openPositions().map((p) => [String(p.tokenId), p]));
+  return positions
+    .filter((p) => p.liquidity > 0n)
+    .map((p) => {
+      const m = meta.get(p.tokenId);
+      return {
+        tokenId: p.tokenId,
+        symbol: p.symbol,
+        tickLower: p.tickLower,
+        tickUpper: p.tickUpper,
+        liquidity: p.liquidity.toString(),
+        usdgIn: m?.usdgIn ?? 0,
+        tokenIn: m?.tokenIn ?? 0,
+        mintedAt: m?.mintedAt ?? 0,
+        txHash: m?.txHash ?? "",
+      };
+    });
+}
+
+/**
  * Realize accrued fees WITHOUT closing the position: a zero-liquidity decrease
  * sweeps the owed fees, TAKE_PAIR sends them to the wallet, and the position's
  * liquidity and range are untouched (it keeps earning). Measured as the real

@@ -11,7 +11,7 @@
 // excluded (tiny on this chain) and noted as such.
 import { readAllExecutions } from "./executionsLog.js";
 import { poolFeePct } from "./venues/stockPools.js";
-import { openPositions, uncollectedFeesUsd } from "./venues/lpPositions.js";
+import { openPositionsOnChain, uncollectedFeesUsd } from "./venues/lpPositions.js";
 
 export interface LpProfit {
   windowLabel: string;
@@ -71,7 +71,7 @@ const round = (n: number) => Math.round(n * 100) / 100;
  */
 export async function lpProfit(): Promise<{ allTime: LpProfit; last24h: LpProfit; note: string }> {
   let uncollected = 0;
-  for (const p of openPositions()) {
+  for (const p of await openPositionsOnChain()) {
     try {
       uncollected += await uncollectedFeesUsd(p);
     } catch {
