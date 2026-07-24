@@ -46,3 +46,30 @@ the engine to trade. Neither wallet needs the other's key.
   take effect on the next redeploy.
 - The public track record (`/api/performance`) and the site are outward-facing.
   Treat changes to them as publishing: confirm before they go out.
+
+## Operator levers (fund manager)
+
+The trading engine ships **idle**. Taking it from idle to live is two deliberate
+steps, both in Railway, both the fund manager's call:
+
+1. **Fund the trading signer wallet** with ETH (gas) plus the capital it should
+   trade. Its address is the `AGENT_SIGNER_PRIVATE_KEY` wallet (also mirrored in
+   `MERIDIAN_WALLET_ADDRESS`). Move funds from the treasury into it.
+2. **Set `AGENT_LIVE_TRADING=true`** and redeploy. It defaults to `false`; while
+   false, the strategy loop logs its decisions but signs nothing.
+
+Both conditions are required. An unfunded wallet or `AGENT_LIVE_TRADING=false`
+means no autonomous trades, regardless of the other.
+
+**To stop:** set `AGENT_LIVE_TRADING=false` and redeploy.
+
+**Guardrails** (Railway, lower to tighten — do not raise casually): per-trade and
+daily caps `AGENT_MAX_TRADE_USD` / `AGENT_MAX_DAILY_USD`, and the house-wallet
+circuit breakers `MERIDIAN_MAX_DAILY_NOTIONAL_USD` /
+`MERIDIAN_MAX_DAILY_WALLET_OPS`.
+
+**One caveat, so "trading off" is not misread as "nothing moves":** the LP guard
+is position protection, not signal trading, and it runs *even with*
+`AGENT_LIVE_TRADING=false` — it can re-center, widen, or withdraw an existing LP
+position on its own. If you need the engine to touch nothing at all, it must also
+hold no open LP positions.
