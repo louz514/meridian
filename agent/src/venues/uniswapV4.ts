@@ -83,8 +83,37 @@ export async function readIndexPerEth(): Promise<number> {
   return sqrtP * sqrtP; // token1(INDEX)/token0(ETH) — matches Uniswap's price convention
 }
 
-/** ETH/USD from a public, no-key equities feed — same source pattern as marketData.ts. */
+/**
+ * ETH/USD from the on-chain NATIVE/USDG bridge pool (fee 500, tickSpacing 10) —
+ * the same chain the wallet's ETH lives on, no external dependency. Matches Yahoo
+ * to ~0.03%. Primary source because Yahoo (the fallback below) blocks datacenter
+ * IPs, so from Railway it returned nothing and the wallet's ETH valued at $0.
+ */
+async function ethUsdFromPool(): Promise<number> {
+  const USDG: Address = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
+  const STATE_VIEW: Address = "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b";
+  const Q96 = 2 ** 96;
+  const poolId = keccak256(
+    encodeAbiParameters(parseAbiParameters("address, address, uint24, int24, address"), [NATIVE, USDG, 500, 10, NATIVE]),
+  );
+  const [sqrtP] = await getPublicClient().readContract({
+    address: STATE_VIEW,
+    abi: [parseAbiItem("function getSlot0(bytes32) view returns (uint160, int24, uint24, uint24)")],
+    functionName: "getSlot0",
+    args: [poolId],
+  });
+  // (sqrtP/Q96)^2 is USDG(6dp) per NATIVE(18dp) in raw units; scale by 1e12 for the decimal gap.
+  return (Number(sqrtP) / Q96) ** 2 * 1e12;
+}
+
+/** ETH/USD, on-chain first (works from datacenter IPs), with a public feed as fallback. */
 export async function fetchEthUsd(): Promise<number> {
+  try {
+    const p = await ethUsdFromPool();
+    if (Number.isFinite(p) && p > 0) return p;
+  } catch {
+    /* on-chain read failed — fall through to the external fallback */
+  }
   const res = await fetch("https://query1.finance.yahoo.com/v8/finance/chart/ETH-USD?range=1d&interval=1d", {
     headers: { "User-Agent": "Mozilla/5.0 (Meridian agent)" },
     signal: AbortSignal.timeout(8000),
