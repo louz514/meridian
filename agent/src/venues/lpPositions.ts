@@ -15,7 +15,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { getPublicClient, getWalletClient, getAgentSigner } from "./signer.js";
+import { getPublicClient, getWalletClient, getAgentSigner, getAgentAddress } from "./signer.js";
 import { guardWalletOp, recordWalletOp } from "../risk.js";
 import { INDEX_CONTRACTS } from "./indexContracts.js";
 import { cachedQualified } from "../signals/poolQualify.js";
@@ -235,7 +235,15 @@ export async function mintRange(params: { symbol: string; widthPct: number }): P
   return record;
 }
 
-/** Positions minted but not yet closed (closure rows share the same file). */
+/**
+ * Positions minted but not yet closed, per the FILE registry (closure rows share
+ * the same file). This is the operator-side record and can desync from chain —
+ * it only knows what THIS backend minted. The management path (lpGuard) and the
+ * allocator still read it; migrating those to `discoverOwnedPositions` (chain
+ * truth) is the remaining half of the desync fix, deferred because it drives
+ * autonomous withdrawals and deserves its own careful change. Valuation already
+ * uses chain discovery via `lpPositionsWithValue`.
+ */
 export function openPositions(): LpPositionRecord[] {
   if (!existsSync(POSITIONS_PATH)) return [];
   const minted = new Map<string, LpPositionRecord>();
@@ -260,53 +268,134 @@ export interface LpPositionValue extends LpPositionRecord {
   rangePct: number;
 }
 
-/**
- * Live liquidity for a position, read from CHAIN rather than the registry file.
- *
- * The stored `liquidity` is only correct at mint time. A file cannot know a
- * position was later emptied, so it must never be the source of truth for value:
- * position 102556 sat in the registry claiming 730498034632674 while the chain
- * said 0, and the wallet was published at $157 while holding $0.82.
- */
-async function onChainLiquidity(p: LpPositionRecord): Promise<bigint> {
-  const k = poolKeyOf(p.symbol);
-  const poolId = keccak256(
-    encodeAbiParameters(parseAbiParameters("address, address, uint24, int24, address"), [k.currency0, k.currency1, k.fee, k.tickSpacing, NATIVE]),
-  );
-  const salt = `0x${BigInt(p.tokenId).toString(16).padStart(64, "0")}` as Hex;
-  const posKey = keccak256(encodePacked(["address", "int24", "int24", "bytes32"], [POSITION_MANAGER, p.tickLower, p.tickUpper, salt]));
-  const [liq] = await getPublicClient().readContract({
-    address: STATE_VIEW,
-    abi: [parseAbiItem("function getPositionInfo(bytes32,bytes32) view returns (uint128,uint256,uint256)")],
-    functionName: "getPositionInfo",
-    args: [poolId, posKey],
-  });
-  return liq;
+// --- On-chain position discovery -------------------------------------------
+// Positions are discovered from CHAIN, not the file registry. The registry only
+// knows positions minted through THIS backend, so a position minted from another
+// machine (or a file that failed to sync) was invisible: that is how
+// balanceOf(PositionManager)=9 coexisted with a registry that knew 1, and how a
+// stale registry row valued the wallet at $157 while it held $0.82.
+//
+// The v4 PositionManager is not ERC721Enumerable, but Transfer(from,to,tokenId)
+// has all three fields indexed, so filtering by the wallet returns its tokenIds
+// in one cheap call even over full history (verified: 9 ids in ~170ms). A burn
+// is Transfer(owner -> 0x0), so `from == wallet`, which the sent set removes;
+// received-minus-sent is therefore exactly what the wallet still holds.
+const SYMBOL_BY_TOKEN: Record<string, string> = Object.fromEntries(
+  Object.entries(INDEX_CONTRACTS.tokens).map(([s, a]) => [String(a).toLowerCase(), s]),
+);
+const xferEvent = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)");
+const poolAndInfoAbi = [
+  parseAbiItem(
+    "function getPoolAndPositionInfo(uint256) view returns ((address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) poolKey, uint256 info)",
+  ),
+];
+const liqByIdAbi = [parseAbiItem("function getPositionLiquidity(uint256) view returns (uint128)")];
+// v4 PositionInfo packs (right-aligned): 8 bits subscriber | 24 tickLower | 24 tickUpper | 200 poolId.
+const signed24 = (v: bigint) => { const x = Number(v & 0xffffffn); return x >= 0x800000 ? x - 0x1000000 : x; };
+
+interface ChainPosition {
+  tokenId: string;
+  symbol: string;
+  tickLower: number;
+  tickUpper: number;
+  liquidity: bigint;
+  currency0: Address;
+  currency1: Address;
+  fee: number;
+  tickSpacing: number;
 }
 
-/** Open positions marked to current pool state: what the range holds right now and its USD value (excl. uncollected fees). */
+/**
+ * The LP position NFTs a wallet currently owns, read entirely from chain: token
+ * ids from Transfer logs, then each position's pool, range and live liquidity
+ * from the PositionManager. Throws (does not return []) on an RPC failure, so a
+ * failed read is never mistaken for "no positions" — the caller decides whether
+ * to degrade or retry.
+ */
+export async function discoverOwnedPositions(wallet: Address): Promise<ChainPosition[]> {
+  const client = getPublicClient();
+  const head = await client.getBlockNumber();
+  const [received, sent] = await Promise.all([
+    client.getLogs({ address: POSITION_MANAGER, event: xferEvent, args: { to: wallet }, fromBlock: 0n, toBlock: head }),
+    client.getLogs({ address: POSITION_MANAGER, event: xferEvent, args: { from: wallet }, fromBlock: 0n, toBlock: head }),
+  ]);
+  const owned = new Map<string, bigint>();
+  for (const l of received) owned.set((l.args as { tokenId: bigint }).tokenId.toString(), (l.args as { tokenId: bigint }).tokenId);
+  for (const l of sent) owned.delete((l.args as { tokenId: bigint }).tokenId.toString());
+  if (owned.size === 0) return [];
+
+  return Promise.all(
+    [...owned.values()].map(async (tokenId): Promise<ChainPosition> => {
+      const [liq, poolAndInfo] = await Promise.all([
+        client.readContract({ address: POSITION_MANAGER, abi: liqByIdAbi, functionName: "getPositionLiquidity", args: [tokenId] }),
+        client.readContract({ address: POSITION_MANAGER, abi: poolAndInfoAbi, functionName: "getPoolAndPositionInfo", args: [tokenId] }),
+      ]);
+      const [poolKey, info] = poolAndInfo;
+      const stock = [poolKey.currency0, poolKey.currency1].find((c) => c.toLowerCase() !== USDG.toLowerCase()) ?? poolKey.currency1;
+      return {
+        tokenId: tokenId.toString(),
+        symbol: SYMBOL_BY_TOKEN[stock.toLowerCase()] ?? stock,
+        tickLower: signed24(info >> 8n),
+        tickUpper: signed24(info >> 32n),
+        liquidity: liq as bigint,
+        currency0: poolKey.currency0,
+        currency1: poolKey.currency1,
+        fee: Number(poolKey.fee),
+        tickSpacing: Number(poolKey.tickSpacing),
+      };
+    }),
+  );
+}
+
+/**
+ * The wallet's live LP positions, marked to current pool state: what each range
+ * holds right now and its USD value (excl. uncollected fees). Chain-sourced —
+ * only what the wallet actually owns and only positions that still hold
+ * liquidity. The file registry contributes cost-basis metadata (usdgIn,
+ * mintedAt, txHash) by tokenId when present, but never decides what exists.
+ */
 export async function lpPositionsWithValue(): Promise<LpPositionValue[]> {
+  const wallet = getAgentAddress();
+  if (!wallet) return [];
+  const positions = await discoverOwnedPositions(wallet);
+  const meta = new Map(openPositions().map((p) => [String(p.tokenId), p]));
+
   const out: LpPositionValue[] = [];
-  for (const p of openPositions()) {
-    const k = poolKeyOf(p.symbol);
-    const { sqrtP, tick } = await slot0(p.symbol);
-    // Chain is authoritative. A position the registry still calls open but which
-    // holds no liquidity has been emptied; counting it inflates the track record.
-    const liveLiquidity = await onChainLiquidity(p);
-    if (liveLiquidity === 0n) continue;
-    const L = Number(liveLiquidity);
+  for (const p of positions) {
+    if (p.liquidity === 0n) continue; // emptied position: it is owned but holds nothing
+    const poolId = keccak256(
+      encodeAbiParameters(parseAbiParameters("address, address, uint24, int24, address"), [p.currency0, p.currency1, p.fee, p.tickSpacing, NATIVE]),
+    );
+    const [sqrtRaw, tickRaw] = await getPublicClient().readContract({
+      address: STATE_VIEW,
+      abi: [parseAbiItem("function getSlot0(bytes32) view returns (uint160, int24, uint24, uint24)")],
+      functionName: "getSlot0",
+      args: [poolId],
+    });
+    const sqrtP = Number(sqrtRaw);
+    const tick = Number(tickRaw);
+    const L = Number(p.liquidity);
     const sA = sqrtAtTick(p.tickLower);
     const sB = sqrtAtTick(p.tickUpper);
     const sC = Math.min(Math.max(sqrtP, sA), sB);
     const amount0 = L * Q96 * (1 / sC - 1 / sB);
     const amount1 = (L * (sC - sA)) / Q96;
-    const usdgIs0 = k.currency0.toLowerCase() === USDG.toLowerCase();
+    const usdgIs0 = p.currency0.toLowerCase() === USDG.toLowerCase();
     const usdgAmount = (usdgIs0 ? amount0 : amount1) / 1e6;
     const tokenAmount = (usdgIs0 ? amount1 : amount0) / 1e18;
     const praw = (sqrtP / Q96) ** 2; // currency1 raw per currency0 raw
     const tokenPriceUsd = (usdgIs0 ? 1 / praw : praw) * 1e12;
+    const m = meta.get(p.tokenId);
     out.push({
-      ...p,
+      tokenId: p.tokenId,
+      symbol: p.symbol,
+      tickLower: p.tickLower,
+      tickUpper: p.tickUpper,
+      liquidity: p.liquidity.toString(),
+      usdgIn: m?.usdgIn ?? 0,
+      tokenIn: m?.tokenIn ?? 0,
+      mintedAt: m?.mintedAt ?? 0,
+      txHash: m?.txHash ?? "",
       inRange: tick >= p.tickLower && tick < p.tickUpper,
       usdgAmount,
       tokenAmount,
