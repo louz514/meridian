@@ -1,4 +1,4 @@
-import { createPublicClient, createWalletClient, http, type Address } from "viem";
+import { createPublicClient, createWalletClient, http, fallback, type Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { config } from "../config.js";
 
@@ -61,12 +61,16 @@ export function getAgentAddress(): `0x${string}` | null {
 let publicClient: ReturnType<typeof createPublicClient> | null = null;
 export function getPublicClient() {
   if (!publicClient) {
+    // READS: a fallback over the configured endpoints, primary (dedicated
+    // provider) first, public endpoint last. viem's fallback() fails over to the
+    // next transport on error/timeout, so a provider throttle doesn't surface as
+    // a read failure. Each leg keeps its own batching + 429 retry.
+    const legs = (config.robinhoodReadRpcUrls.length ? config.robinhoodReadRpcUrls : ["https://rpc.mainnet.chain.robinhood.com"]).map(
+      (url) => http(url, { batch: { wait: 100, batchSize: 10 }, retryCount: 4, retryDelay: 250 }),
+    );
     publicClient = createPublicClient({
       chain: robinhoodChain,
-      // retryCount/retryDelay: the public RPC returns HTTP 429 under load; viem
-      // retries 429s with exponential backoff (honoring Retry-After), so a brief
-      // rate-limit window is ridden out instead of surfacing as a read failure.
-      transport: http(config.robinhoodRpcUrl, { batch: { wait: 100, batchSize: 10 }, retryCount: 4, retryDelay: 250 }),
+      transport: legs.length > 1 ? fallback(legs) : legs[0],
       batch: { multicall: { wait: 50 } },
     });
   }
@@ -76,5 +80,7 @@ export function getPublicClient() {
 export function getWalletClient() {
   const signer = getAgentSigner();
   if (!signer) throw new Error("AGENT_SIGNER_PRIVATE_KEY not configured");
-  return createWalletClient({ account: signer.account, chain: robinhoodChain, transport: http(config.robinhoodRpcUrl) });
+  // WRITES go straight to the sequencer (robinhoodWriteRpcUrl) for the fewest
+  // hops to inclusion — not through a read provider that would relay to it.
+  return createWalletClient({ account: signer.account, chain: robinhoodChain, transport: http(config.robinhoodWriteRpcUrl) });
 }

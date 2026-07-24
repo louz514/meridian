@@ -4,6 +4,28 @@ export const config = {
   // Robinhood Chain RPC — set this to move IndexTrader off its stub and
   // actually submit swaps to The Index's Uniswap v4 pools.
   robinhoodRpcUrl: process.env.ROBINHOOD_RPC_URL ?? "",
+
+  // --- RPC latency architecture (see AGENTS.md / RPC notes) --------------------
+  // READS use a fallback list: primary first (a dedicated provider like Alchemy),
+  // then an optional explicit fallback, then the public endpoint as a last
+  // resort, so a provider throttle or outage fails over instead of taking the
+  // agent down. Deduped, so if the primary IS the public endpoint the list is
+  // just the one.
+  robinhoodReadRpcUrls: [
+    ...new Set(
+      [
+        process.env.ROBINHOOD_RPC_URL,
+        process.env.ROBINHOOD_RPC_FALLBACK_URL,
+        "https://rpc.mainnet.chain.robinhood.com", // public, sequencer-backed — always the final fallback
+      ].filter((u): u is string => Boolean(u)),
+    ),
+  ],
+  // WRITES (transaction submission) go straight to the sequencer for the fewest
+  // hops to inclusion — a third-party RPC relays a tx to the sequencer anyway,
+  // adding latency. Defaults to the public Robinhood endpoint (sequencer-backed)
+  // even when reads move to a dedicated provider. Override only for a private
+  // sequencer endpoint. This is the transaction-speed edge, so keep it direct.
+  robinhoodWriteRpcUrl: process.env.ROBINHOOD_WRITE_RPC_URL || "https://rpc.mainnet.chain.robinhood.com",
   x402FacilitatorUrl: process.env.X402_FACILITATOR_URL ?? "",
   maxTradeUsd: Number(process.env.AGENT_MAX_TRADE_USD ?? 1000),
   maxDailyUsd: Number(process.env.AGENT_MAX_DAILY_USD ?? 5000),
